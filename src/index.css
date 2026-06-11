@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "PingFang SC", "Helvetica Neue", Arial, "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+/* 制度全文 markdown 渲染样式 */
+.policy-doc h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 1rem 0;
+}
+.policy-doc h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+}
+.policy-doc p {
+  margin: 0.5rem 0;
+}
+.policy-doc strong {
+  color: #0f172a;
+}
+.policy-doc blockquote {
+  border-left: 3px solid #6366f1;
+  background: #eef2ff;
+  padding: 0.5rem 1rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+  margin: 0.75rem 0;
+}
+.policy-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+.policy-doc th,
+.policy-doc td {
+  border: 1px solid #e2e8f0;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.policy-doc th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+.policy-doc ol,
+.policy-doc ul {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+  list-style: decimal;
+}
+.policy-doc ul {
+  list-style: disc;
+}
+.policy-doc code {
+  background: #f1f5f9;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85em;
+}
+.policy-doc pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.policy-doc pre code {
+  background: transparent;
+  padding: 0;
+}
+.policy-doc hr {
+  border-color: #e2e8f0;
+  margin: 1.25rem 0;
+}
