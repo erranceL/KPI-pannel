@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Card, Info, Warn, inputCls } from '../components/ui';
+import { Badge, Card, Info, Warn, inputBase } from '../components/ui';
 import {
   GRADE_FACTOR,
   LEVEL_FACTOR,
@@ -66,7 +66,7 @@ export default function Annual() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold">年度视图</h1>
-        <select className={inputCls + ' w-auto'} value={year} onChange={(e) => setYear(e.target.value)}>
+        <select className={inputBase} value={year} onChange={(e) => setYear(e.target.value)}>
           {years.map((y) => (
             <option key={y}>{y}</option>
           ))}
@@ -148,7 +148,7 @@ export default function Annual() {
             <div className="mb-1 text-xs text-slate-500">公司年度奖金预算</div>
             <input
               type="number"
-              className={inputCls + ' w-40'}
+              className={inputBase + ' w-40'}
               value={cfg.budget || ''}
               placeholder="如 1000000"
               onChange={(e) => setAnnualConfig(year, { budget: Number(e.target.value) })}
@@ -161,7 +161,7 @@ export default function Annual() {
               step={0.05}
               min={0}
               max={1.2}
-              className={inputCls + ' w-28'}
+              className={inputBase + ' w-28'}
               value={cfg.coefficient}
               onChange={(e) => setAnnualConfig(year, { coefficient: Math.min(1.2, Math.max(0, Number(e.target.value))) })}
             />

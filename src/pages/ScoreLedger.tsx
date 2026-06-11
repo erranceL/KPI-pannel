@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Card, EmptyHint, Field, Info, Modal, MonthPicker, Warn, btnGhost, btnPrimary, inputCls } from '../components/ui';
+import { Badge, Card, EmptyHint, Field, Info, Modal, MonthPicker, Warn, btnGhost, btnPrimary, inputBase, inputCls } from '../components/ui';
 import {
   DELIVERY_FACTOR,
   DELIVERY_LABEL,
@@ -50,7 +50,7 @@ export default function ScoreLedger() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold">积分台账</h1>
         <MonthPicker value={month} onChange={setMonth} />
-        <select className={inputCls + ' w-auto'} value={squad} onChange={(e) => setSquad(e.target.value)}>
+        <select className={inputBase} value={squad} onChange={(e) => setSquad(e.target.value)}>
           <option>全部</option>
           {SQUADS.map((s) => (
             <option key={s}>{s}</option>
@@ -303,7 +303,7 @@ function AddScoreModal({
             {participants.map((p, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <select
-                  className={inputCls + ' flex-1'}
+                  className={inputBase + ' min-w-0 flex-1'}
                   value={p.memberId}
                   onChange={(e) =>
                     setParticipants((ps) => ps.map((x, i) => (i === idx ? { ...x, memberId: e.target.value } : x)))
@@ -318,7 +318,7 @@ function AddScoreModal({
                 </select>
                 <input
                   type="number"
-                  className={inputCls + ' w-24'}
+                  className={inputBase + ' w-24 shrink-0'}
                   value={p.points}
                   disabled={!split}
                   onChange={(e) =>
@@ -328,7 +328,13 @@ function AddScoreModal({
                 {split && (
                   <button
                     className="text-xs text-red-500"
-                    onClick={() => setParticipants((ps) => ps.filter((_, i) => i !== idx))}
+                    onClick={() =>
+                      setParticipants((ps) => {
+                        const next = ps.filter((_, i) => i !== idx);
+                        // 回到单人时,分值恢复为档位分值
+                        return next.length === 1 ? [{ ...next[0], points: tierPoints }] : next;
+                      })
+                    }
                   >
                     移除
                   </button>

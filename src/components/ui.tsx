@@ -60,8 +60,11 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
-export const inputCls =
-  'w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500';
+// 不带宽度的基础样式;需要自定宽度时用 inputBase 拼接,避免与 w-full 冲突
+export const inputBase =
+  'rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500';
+
+export const inputCls = inputBase + ' w-full';
 
 export const btnPrimary =
   'inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50';
@@ -83,7 +86,7 @@ export function Info({ children }: { children: ReactNode }) {
 }
 
 export function MonthPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return <input type="month" className={inputCls + ' w-auto'} value={value} onChange={(e) => onChange(e.target.value)} />;
+  return <input type="month" className={inputBase} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
 export function EmptyHint({ text }: { text: string }) {
