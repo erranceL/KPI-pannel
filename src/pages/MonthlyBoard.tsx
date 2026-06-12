@@ -1,31 +1,48 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Archive } from 'lucide-react';
+import { Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Badge, Card, ConfirmDialog, EmptyHint, Info, MonthStepper, PageHeader, btnGhost } from '../components/ui';
-import { currentMonth, monthOf, monthlyTotals, round1, tenureMonths, todayISO } from '../lib/rules';
+import { addMonths, currentMonth, round1, tenureMonths, todayISO, totalsInRange } from '../lib/rules';
 import { canArchive, isManager, useCurrentMember, useStore } from '../store';
 
 type ViewMode = 'detail' | 'anonymous' | 'range';
+type Period = 'month' | 'quarter' | 'year';
+
+/** 周期对应的月份区间与展示标签(anchor 为 YYYY-MM) */
+function periodInfo(period: Period, anchor: string) {
+  const [y, m] = anchor.split('-').map(Number);
+  if (period === 'quarter') {
+    const q = Math.floor((m - 1) / 3);
+    const start = `${y}-${String(q * 3 + 1).padStart(2, '0')}`;
+    return { from: `${start}-01`, to: `${addMonths(start, 2)}-31`, label: `${y} Q${q + 1}`, months: 3 };
+  }
+  if (period === 'year') {
+    return { from: `${y}-01-01`, to: `${y}-12-31`, label: `${y}年`, months: 12 };
+  }
+  return { from: `${anchor}-01`, to: `${anchor}-31`, label: `${y}年${m}月`, months: 1 };
+}
 
 export default function MonthlyBoard() {
   const { data, archiveMonth, notify } = useStore();
   const me = useCurrentMember();
   const [month, setMonth] = useState(currentMonth());
+  const [period, setPeriod] = useState<Period>('month');
   const manager = isManager(me);
   const [mode, setMode] = useState<ViewMode>(manager ? 'detail' : 'anonymous');
   const [confirmArchive, setConfirmArchive] = useState(false);
 
+  const { from, to, label, months } = periodInfo(period, month);
   const archived = data.archivedMonths.includes(month);
-  const totals = useMemo(() => monthlyTotals(data, month).sort((a, b) => b.total - a.total), [data, month]);
+  const totals = useMemo(() => totalsInRange(data, from, to).sort((a, b) => b.total - a.total), [data, from, to]);
   const memberOf = (id: string) => data.members.find((m) => m.id === id);
 
   const summary = useMemo(() => {
     const positive = round1(totals.reduce((a, t) => a + t.positive + t.ops, 0));
     const deduction = round1(totals.reduce((a, t) => a + t.deduction + t.leadLiability, 0));
-    const monthScores = data.scores.filter((s) => monthOf(s.date) === month && s.tier !== 'ops');
-    const pendingXl = monthScores.filter((s) => s.tier === 'xlarge' && !s.xlConfirmedBy).length;
-    return { positive, deduction, count: monthScores.length, pendingXl };
-  }, [data, month, totals]);
+    const periodScores = data.scores.filter((s) => s.date >= from && s.date <= to && s.tier !== 'ops');
+    const pendingXl = periodScores.filter((s) => s.tier === 'xlarge' && !s.xlConfirmedBy).length;
+    return { positive, deduction, count: periodScores.length, pendingXl };
+  }, [data, from, to, totals]);
 
   const modes: { key: ViewMode; label: string; allowed: boolean }[] = [
     { key: 'detail', label: '实名明细', allowed: manager },
@@ -33,18 +50,28 @@ export default function MonthlyBoard() {
     { key: 'range', label: '总分区间', allowed: true },
   ];
 
+  // 区间阈值随周期长度等比放大(口径仍是月度 120/80/40)
+  const k = months;
   const ranges = [
-    { label: '120 分以上', min: 120, max: Infinity },
-    { label: '80–119 分', min: 80, max: 119.9 },
-    { label: '40–79 分', min: 40, max: 79.9 },
-    { label: '0–39 分', min: 0, max: 39.9 },
+    { label: `${120 * k} 分以上`, min: 120 * k, max: Infinity },
+    { label: `${80 * k}–${120 * k - 1} 分`, min: 80 * k, max: 120 * k - 0.1 },
+    { label: `${40 * k}–${80 * k - 1} 分`, min: 40 * k, max: 80 * k - 0.1 },
+    { label: `0–${40 * k - 1} 分`, min: 0, max: 40 * k - 0.1 },
     { label: '负分', min: -Infinity, max: -0.1 },
   ];
+
+  const periods: { key: Period; label: string }[] = [
+    { key: 'month', label: '月' },
+    { key: 'quarter', label: '季' },
+    { key: 'year', label: '年' },
+  ];
+  const stepBtn =
+    'flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-700';
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="月度看板"
+        title="看板"
         actions={
           <div className="flex items-center gap-2">
             <div className="flex gap-1 rounded-lg bg-slate-200/70 p-1">
@@ -62,7 +89,7 @@ export default function MonthlyBoard() {
                   </button>
                 ))}
             </div>
-            {!archived && canArchive(me) && (
+            {period === 'month' && !archived && canArchive(me) && (
               <button className={btnGhost} onClick={() => setConfirmArchive(true)}>
                 <Archive size={14} /> 归档本月
               </button>
@@ -70,8 +97,33 @@ export default function MonthlyBoard() {
           </div>
         }
       >
-        <MonthStepper value={month} onChange={setMonth} />
-        {archived && <Badge color="amber">已归档 · 记录锁定</Badge>}
+        <div className="flex gap-1 rounded-lg bg-slate-200/70 p-1">
+          {periods.map((p) => (
+            <button
+              key={p.key}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                period === p.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+              onClick={() => setPeriod(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {period === 'month' ? (
+          <MonthStepper value={month} onChange={setMonth} />
+        ) : (
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white px-1 py-0.5">
+            <button className={stepBtn} onClick={() => setMonth(addMonths(month, -months))} title="上一周期">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="w-[7.2rem] text-center text-sm font-medium text-slate-700">{label}</span>
+            <button className={stepBtn} onClick={() => setMonth(addMonths(month, months))} title="下一周期">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
+        {period === 'month' && archived && <Badge color="amber">已归档 · 记录锁定</Badge>}
       </PageHeader>
 
       {manager && (
@@ -97,7 +149,9 @@ export default function MonthlyBoard() {
       )}
 
       <Info>
-        月度总分 = 正分 + 运维杂项 − 扣分 − Lead 连带;公示期 2 个工作日,异议找架构师仲裁(8.1);试运行期间全员仅公示区间或匿名排名(8.2)。
+        {period === 'month'
+          ? '月度总分 = 正分 + 运维杂项 − 扣分 − Lead 连带;公示期 2 个工作日,异议找架构师仲裁(8.1);试运行期间全员仅公示区间或匿名排名(8.2)。'
+          : `${period === 'quarter' ? '季度' : '年度'}视图为该周期内各月记录的累加,口径与月度一致;归档、公示与申诉仍按月进行(8.1)。`}
       </Info>
 
       {totals.length === 0 ? (
@@ -105,14 +159,14 @@ export default function MonthlyBoard() {
           <EmptyHint text="暂无数据" />
         </Card>
       ) : mode === 'range' ? (
-        <Card title={`${month} 总分区间公示`}>
+        <Card title={`${label} 总分区间公示`}>
           <div className="space-y-3">
             {ranges.map((r) => {
               const names = totals.filter((t) => t.total >= r.min && t.total <= r.max);
               if (!names.length) return null;
               return (
                 <div key={r.label} className="flex items-start gap-4">
-                  <div className="w-28 shrink-0 pt-0.5 text-sm font-medium text-slate-500">{r.label}</div>
+                  <div className="w-32 shrink-0 pt-0.5 text-sm font-medium tabular-nums text-slate-500">{r.label}</div>
                   <div className="flex flex-wrap gap-2">
                     {names.map((t) => {
                       const m = memberOf(t.memberId);
@@ -131,7 +185,7 @@ export default function MonthlyBoard() {
           </div>
         </Card>
       ) : (
-        <Card title={`${month} ${mode === 'detail' ? '实名明细' : '匿名排名'}`}>
+        <Card title={`${label} ${mode === 'detail' ? '实名明细' : '匿名排名'}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

@@ -15,7 +15,7 @@ import { ROLE_LABEL } from '../lib/types';
 
 const NAV = [
   { to: '/my', label: '我的积分', icon: CircleUser, roles: ['member', 'lead', 'architect', 'cto'] },
-  { to: '/board', label: '月度看板', icon: LayoutDashboard, roles: ['member', 'lead', 'architect', 'cto'] },
+  { to: '/board', label: '看板', icon: LayoutDashboard, roles: ['member', 'lead', 'architect', 'cto'] },
   { to: '/scores', label: '积分台账', icon: ClipboardList, roles: ['lead', 'architect', 'cto'] },
   { to: '/incidents', label: '问题与事故', icon: AlertTriangle, roles: ['lead', 'architect', 'cto'] },
   { to: '/annual', label: '年度视图', icon: Trophy, roles: ['architect', 'cto'] },

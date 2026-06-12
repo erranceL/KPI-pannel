@@ -264,7 +264,7 @@ export interface MemberTotals {
   total: number;
 }
 
-function totalsInRange(data: AppData, from: string, to: string): MemberTotals[] {
+export function totalsInRange(data: AppData, from: string, to: string): MemberTotals[] {
   return data.members
     .filter((m) => m.active)
     .map((m) => {
