@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Card, EmptyHint, Info, MonthPicker } from '../components/ui';
+import { Badge, Card, EmptyHint, Info, MonthPicker, PageHeader } from '../components/ui';
 import {
   TIER_LABEL,
   addMonths,
@@ -35,12 +35,11 @@ export default function Observation() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold">试运行观察(10.1)</h1>
+      <PageHeader title="试运行观察">
         <MonthPicker value={from} onChange={setFrom} />
         <span className="text-slate-400">至</span>
         <MonthPicker value={to} onChange={setTo} />
-      </div>
+      </PageHeader>
 
       <Info>
         架构师按月跟踪四项指标,作为转正式版的修订输入:大档占比、重排期次数、小问题重复未改进、各端定档尺度一致性。

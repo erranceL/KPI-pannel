@@ -4,9 +4,22 @@
   font-family: "PingFang SC", "Helvetica Neue", Arial, "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background-color: #f1f5f9;
   color: #1e293b;
+}
+
+/* 表格数字统一等宽对齐 */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='checkbox'] {
+  accent-color: #4f46e5;
 }
 
 /* 制度全文 markdown 渲染样式 */

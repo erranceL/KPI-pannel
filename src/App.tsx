@@ -1,14 +1,23 @@
 import { useEffect } from 'react';
-import { HashRouter, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
+import Toaster from './components/Toast';
 import Annual from './pages/Annual';
 import IncidentLedger from './pages/IncidentLedger';
 import MonthlyBoard from './pages/MonthlyBoard';
+import My from './pages/My';
 import Observation from './pages/Observation';
 import Policy from './pages/Policy';
 import ScoreLedger from './pages/ScoreLedger';
 import Team from './pages/Team';
 import { useStore } from './store';
+
+/** 成员身份默认进入「我的积分」,管理身份进入月度看板 */
+function Home() {
+  const { data, currentUserId } = useStore();
+  const me = data.members.find((m) => m.id === currentUserId);
+  return <Navigate to={me?.role === 'member' ? '/my' : '/board'} replace />;
+}
 
 export default function App() {
   const { loaded, load } = useStore();
@@ -25,7 +34,9 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<MonthlyBoard />} />
+          <Route index element={<Home />} />
+          <Route path="my" element={<My />} />
+          <Route path="board" element={<MonthlyBoard />} />
           <Route path="scores" element={<ScoreLedger />} />
           <Route path="incidents" element={<IncidentLedger />} />
           <Route path="annual" element={<Annual />} />
@@ -34,6 +45,7 @@ export default function App() {
           <Route path="policy" element={<Policy />} />
         </Route>
       </Routes>
+      <Toaster />
     </HashRouter>
   );
 }

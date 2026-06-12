@@ -58,7 +58,7 @@ src/
   data/adapter.ts     # StorageAdapter 接口 + LocalStorageAdapter
   data/seed.ts        # 演示种子数据
   store.ts            # Zustand 状态 + 前端权限辅助
-  pages/              # 7 个页面
+  pages/              # 8 个页面(含成员个人首页「我的积分」)
   components/         # 布局与通用 UI
   assets/policy.md    # 制度 v2.2 全文
 ```

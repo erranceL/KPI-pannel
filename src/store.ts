@@ -10,14 +10,23 @@ export function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+export interface ToastInfo {
+  id: number;
+  message: string;
+  undo?: () => void;
+}
+
 interface Store {
   data: AppData;
   loaded: boolean;
   /** 当前以谁的身份操作(前端层面的轻量权限,真实鉴权待后端) */
   currentUserId: string;
+  toast: ToastInfo | null;
 
   load: () => Promise<void>;
   setCurrentUser: (id: string) => void;
+  notify: (message: string, undo?: () => void) => void;
+  dismissToast: () => void;
 
   mutate: (fn: (d: AppData) => void) => void;
 
@@ -46,6 +55,10 @@ export const useStore = create<Store>((set, get) => ({
   data: EMPTY,
   loaded: false,
   currentUserId: localStorage.getItem('kpi-pannel-user') || 'cto',
+  toast: null,
+
+  notify: (message, undo) => set({ toast: { id: Date.now(), message, undo } }),
+  dismissToast: () => set({ toast: null }),
 
   load: async () => {
     const data = await adapter.load();
@@ -72,7 +85,14 @@ export const useStore = create<Store>((set, get) => ({
       const i = d.scores.findIndex((s) => s.id === entry.id);
       if (i >= 0) d.scores[i] = entry;
     }),
-  removeScore: (id) => get().mutate((d) => (d.scores = d.scores.filter((s) => s.id !== id))),
+  removeScore: (id) => {
+    const prev = get().data;
+    get().mutate((d) => (d.scores = d.scores.filter((s) => s.id !== id)));
+    get().notify('已删除 1 条积分记录', () => {
+      set({ data: prev });
+      void adapter.save(prev);
+    });
+  },
 
   addIncident: (entry) => get().mutate((d) => d.incidents.push(entry)),
   updateIncident: (entry) =>
@@ -80,7 +100,14 @@ export const useStore = create<Store>((set, get) => ({
       const i = d.incidents.findIndex((s) => s.id === entry.id);
       if (i >= 0) d.incidents[i] = entry;
     }),
-  removeIncident: (id) => get().mutate((d) => (d.incidents = d.incidents.filter((s) => s.id !== id))),
+  removeIncident: (id) => {
+    const prev = get().data;
+    get().mutate((d) => (d.incidents = d.incidents.filter((s) => s.id !== id)));
+    get().notify('已删除 1 条事故记录', () => {
+      set({ data: prev });
+      void adapter.save(prev);
+    });
+  },
 
   upsertMember: (m) =>
     get().mutate((d) => {

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { addMonths } from '../lib/rules';
 
 export function Card({ title, extra, children }: { title?: ReactNode; extra?: ReactNode; children: ReactNode }) {
   return (
@@ -14,13 +16,12 @@ export function Card({ title, extra, children }: { title?: ReactNode; extra?: Re
   );
 }
 
+/** 语义色收敛:红=扣分/红线,琥珀=警示/待确认,绿=确认/保护期,灰=中性 */
 const BADGE_STYLE: Record<string, string> = {
   slate: 'bg-slate-100 text-slate-600',
-  blue: 'bg-blue-100 text-blue-700',
   green: 'bg-emerald-100 text-emerald-700',
   amber: 'bg-amber-100 text-amber-800',
   red: 'bg-red-100 text-red-700',
-  violet: 'bg-violet-100 text-violet-700',
 };
 
 export function Badge({ color = 'slate', children }: { color?: string; children: ReactNode }) {
@@ -67,13 +68,13 @@ export const inputBase =
 export const inputCls = inputBase + ' w-full';
 
 export const btnPrimary =
-  'inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-40';
 
 export const btnGhost =
-  'inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50';
+  'inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 active:bg-slate-100';
 
 export const btnDanger =
-  'inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50';
+  'inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3.5 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50';
 
 export function Warn({ children }: { children: ReactNode }) {
   return (
@@ -89,6 +90,95 @@ export function MonthPicker({ value, onChange }: { value: string; onChange: (v: 
   return <input type="month" className={inputBase} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
-export function EmptyHint({ text }: { text: string }) {
-  return <div className="py-10 text-center text-sm text-slate-400">{text}</div>;
+export function EmptyHint({ text, action }: { text: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-12">
+      <div className="text-sm text-slate-400">{text}</div>
+      {action}
+    </div>
+  );
+}
+
+/** 统一页头:标题在左,操作在右 */
+export function PageHeader({ title, children, actions }: { title: string; children?: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <h1 className="text-xl font-bold tracking-tight">{title}</h1>
+      {children}
+      <div className="flex-1" />
+      {actions}
+    </div>
+  );
+}
+
+/** 月份步进器:‹ 2026年6月 ›,点中间可直接选择 */
+export function MonthStepper({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const stepBtn =
+    'flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-700';
+  return (
+    <div className="flex items-center rounded-lg border border-slate-200 bg-white px-1 py-0.5">
+      <button className={stepBtn} onClick={() => onChange(addMonths(value, -1))} title="上一月">
+        <ChevronLeft size={16} />
+      </button>
+      <input
+        type="month"
+        className="w-[7.2rem] border-0 bg-transparent text-center text-sm font-medium text-slate-700 focus:outline-none"
+        value={value}
+        onChange={(e) => e.target.value && onChange(e.target.value)}
+      />
+      <button className={stepBtn} onClick={() => onChange(addMonths(value, 1))} title="下一月">
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+/** 统一确认弹窗,替代 window.confirm */
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel = '确认',
+  danger,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="text-base font-semibold text-slate-800">{title}</div>
+        <div className="mt-2 text-sm leading-6 text-slate-500">{message}</div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button className={btnGhost} onClick={onClose}>
+            取消
+          </button>
+          <button
+            className={
+              danger
+                ? 'rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700'
+                : btnPrimary
+            }
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 字段下方的行内错误提示 */
+export function FieldError({ text }: { text?: string }) {
+  if (!text) return null;
+  return <div className="mt-1 text-xs text-red-600">{text}</div>;
 }
