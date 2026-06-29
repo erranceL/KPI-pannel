@@ -49,7 +49,7 @@ export interface ScoreEntry {
   recordedBy: string; // memberId
 }
 
-/** 事故档位(4.2):资损级 > P0 > P1 > P2 > 小问题(4.4) */
+/** 事故档位(4.2):资损违规级 > P0 > P1 > P2 > 小问题(4.4) */
 export type IncidentLevel = 'asset' | 'P0' | 'P1' | 'P2' | 'minor';
 
 /** 责任:主责/次责/无责(4.3) */
@@ -57,6 +57,18 @@ export type Liability = 'primary' | 'secondary' | 'none';
 
 /** 报告情形(4.3) */
 export type Reporting = 'proactive' | 'passive' | 'late' | 'concealed';
+
+export interface AssetLossEntry {
+  /** 资产/资金损失总额,默认按 USDT/USD 等值口径 */
+  amount?: number;
+  /** 已追回/已覆盖金额,净损失 = amount - recovered */
+  recovered?: number;
+  /** 是否按既定 Review/审批/回滚流程执行 */
+  processFollowed?: boolean;
+  /** 系统按当前参考线给出的建议,最终事故级别仍由人决定 */
+  suggestedLevel?: IncidentLevel;
+  note?: string;
+}
 
 export interface IncidentEntry {
   id: string;
@@ -75,6 +87,8 @@ export interface IncidentEntry {
   leadMemberId?: string;
   /** 4.4:同类小问题是否已有明确规范/检查清单 */
   hasChecklist?: boolean;
+  /** 资损单列项:只记录事实与系统建议,不自动决定最终事故档位 */
+  assetLoss?: AssetLossEntry;
   note?: string;
   decidedBy: string; // memberId,P0/P1 须 CTO,P2 可架构师(4.5)
 }
@@ -95,6 +109,47 @@ export interface AnnualConfig {
   perMember: Record<string, AnnualMemberParams>;
 }
 
+export interface TierRuleConfig {
+  min: number;
+  max: number;
+  defaultPoints: number;
+}
+
+export interface DeliveryRuleConfig {
+  delayPenalty: number;
+  formulaMinPlannedDays: number;
+}
+
+export interface IncidentRuleConfig {
+  base: Record<IncidentLevel, number>;
+  liabilityFactor: Record<Liability, number>;
+  reportingFactor: Record<Reporting, number>;
+  capRatio: number;
+  capAbsolute: number;
+  newbieHalfMonths: number;
+  leadDeductionRate: number;
+}
+
+export interface LeaderRuleConfig {
+  bonusRate: number;
+  monthlyCap: number;
+}
+
+export interface AssetLossRuleConfig {
+  observeMax: number;
+  p2Max: number;
+  p1Max: number;
+  currency: string;
+}
+
+export interface KpiRuleConfig {
+  tiers: Record<Tier, TierRuleConfig>;
+  delivery: DeliveryRuleConfig;
+  incidents: IncidentRuleConfig;
+  leader: LeaderRuleConfig;
+  assetLoss: AssetLossRuleConfig;
+}
+
 export interface AppData {
   members: Member[];
   scores: ScoreEntry[];
@@ -102,6 +157,8 @@ export interface AppData {
   /** 已归档月份 YYYY-MM,归档后锁定(8.1) */
   archivedMonths: string[];
   annual: Record<string, AnnualConfig>;
+  /** KPI 规则配置;旧数据缺失时由存储层补默认值 */
+  config?: KpiRuleConfig;
 }
 
 export const SQUADS: Squad[] = ['前端', '后端', '链端', 'App', 'DevOps', 'QA', '架构'];

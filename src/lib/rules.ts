@@ -7,6 +7,7 @@ import type {
   Grade,
   IncidentEntry,
   IncidentLevel,
+  KpiRuleConfig,
   Liability,
   Member,
   Reporting,
@@ -26,29 +27,106 @@ export const TIER_LABEL: Record<Tier, string> = {
   ops: '运维杂项',
 };
 
+export const DEFAULT_KPI_CONFIG: KpiRuleConfig = {
+  tiers: {
+    small: { min: 1, max: 4, defaultPoints: 3 },
+    medium: { min: 5, max: 9, defaultPoints: 7 },
+    large: { min: 10, max: 24, defaultPoints: 17 },
+    xlarge: { min: 25, max: 50, defaultPoints: 35 },
+    online: { min: 3, max: 30, defaultPoints: 3 },
+    ops: { min: 0, max: 10, defaultPoints: 0 },
+  },
+  delivery: {
+    delayPenalty: 1.2,
+    formulaMinPlannedDays: 3,
+  },
+  incidents: {
+    base: { asset: 300, P0: 150, P1: 50, P2: 15, minor: 0 },
+    liabilityFactor: { primary: 1, secondary: 0.5, none: 0 },
+    reportingFactor: { proactive: 0.5, passive: 1, late: 1.2, concealed: 1.5 },
+    capRatio: 0.4,
+    capAbsolute: 1000,
+    newbieHalfMonths: 3,
+    leadDeductionRate: 0.3,
+  },
+  leader: {
+    bonusRate: 0.1,
+    monthlyCap: 15,
+  },
+  assetLoss: {
+    observeMax: 100,
+    p2Max: 500,
+    p1Max: 1000,
+    currency: 'USDT',
+  },
+};
+
+export function normalizeKpiConfig(input?: Partial<KpiRuleConfig> | null): KpiRuleConfig {
+  const cfg = input ?? {};
+  return {
+    tiers: {
+      small: { ...DEFAULT_KPI_CONFIG.tiers.small, ...cfg.tiers?.small },
+      medium: { ...DEFAULT_KPI_CONFIG.tiers.medium, ...cfg.tiers?.medium },
+      large: { ...DEFAULT_KPI_CONFIG.tiers.large, ...cfg.tiers?.large },
+      xlarge: { ...DEFAULT_KPI_CONFIG.tiers.xlarge, ...cfg.tiers?.xlarge },
+      online: { ...DEFAULT_KPI_CONFIG.tiers.online, ...cfg.tiers?.online },
+      ops: { ...DEFAULT_KPI_CONFIG.tiers.ops, ...cfg.tiers?.ops },
+    },
+    delivery: { ...DEFAULT_KPI_CONFIG.delivery, ...cfg.delivery },
+    incidents: {
+      ...DEFAULT_KPI_CONFIG.incidents,
+      ...cfg.incidents,
+      base: { ...DEFAULT_KPI_CONFIG.incidents.base, ...cfg.incidents?.base },
+      liabilityFactor: { ...DEFAULT_KPI_CONFIG.incidents.liabilityFactor, ...cfg.incidents?.liabilityFactor },
+      reportingFactor: { ...DEFAULT_KPI_CONFIG.incidents.reportingFactor, ...cfg.incidents?.reportingFactor },
+    },
+    leader: { ...DEFAULT_KPI_CONFIG.leader, ...cfg.leader },
+    assetLoss: { ...DEFAULT_KPI_CONFIG.assetLoss, ...cfg.assetLoss },
+  };
+}
+
+let activeConfig: KpiRuleConfig = normalizeKpiConfig();
+
+export function setActiveConfig(config?: Partial<KpiRuleConfig> | null): void {
+  activeConfig = normalizeKpiConfig(config);
+}
+
+export function getActiveConfig(): KpiRuleConfig {
+  return activeConfig;
+}
+
 /** 各档分值区间 [下限, 上限](3.1),录入时区间内取整 */
 export const TIER_RANGE: Record<Tier, [number, number]> = {
-  small: [1, 4],
-  medium: [5, 9],
-  large: [10, 24],
-  xlarge: [25, 50],
-  online: [3, 30],
-  ops: [0, 10],
+  small: [DEFAULT_KPI_CONFIG.tiers.small.min, DEFAULT_KPI_CONFIG.tiers.small.max],
+  medium: [DEFAULT_KPI_CONFIG.tiers.medium.min, DEFAULT_KPI_CONFIG.tiers.medium.max],
+  large: [DEFAULT_KPI_CONFIG.tiers.large.min, DEFAULT_KPI_CONFIG.tiers.large.max],
+  xlarge: [DEFAULT_KPI_CONFIG.tiers.xlarge.min, DEFAULT_KPI_CONFIG.tiers.xlarge.max],
+  online: [DEFAULT_KPI_CONFIG.tiers.online.min, DEFAULT_KPI_CONFIG.tiers.online.max],
+  ops: [DEFAULT_KPI_CONFIG.tiers.ops.min, DEFAULT_KPI_CONFIG.tiers.ops.max],
 };
 
 /** 各档默认值:取区间中位;线上默认为及时响应基础分 3 */
 export const TIER_DEFAULT_POINTS: Record<Tier, number> = {
-  small: 3,
-  medium: 7,
-  large: 17,
-  xlarge: 35,
-  online: 3,
-  ops: 0,
+  small: DEFAULT_KPI_CONFIG.tiers.small.defaultPoints,
+  medium: DEFAULT_KPI_CONFIG.tiers.medium.defaultPoints,
+  large: DEFAULT_KPI_CONFIG.tiers.large.defaultPoints,
+  xlarge: DEFAULT_KPI_CONFIG.tiers.xlarge.defaultPoints,
+  online: DEFAULT_KPI_CONFIG.tiers.online.defaultPoints,
+  ops: DEFAULT_KPI_CONFIG.tiers.ops.defaultPoints,
 };
+
+export function tierRange(tier: Tier): [number, number] {
+  const cfg = getActiveConfig().tiers[tier];
+  return [cfg.min, cfg.max];
+}
+
+export function tierDefaultPoints(tier: Tier): number {
+  return getActiveConfig().tiers[tier].defaultPoints;
+}
 
 /** 分值须落在该档区间内(3.1) */
 export function validTierPoints(tier: Tier, points: number): boolean {
-  const [min, max] = TIER_RANGE[tier];
+  const [min, max] = tierRange(tier);
   return Number.isInteger(points) && points >= min && points <= max;
 }
 
@@ -63,7 +141,7 @@ export const DELIVERY_LABEL: Record<Delivery, string> = {
 };
 
 /** 延期惩罚系数(3.4):工期单位=工作日 */
-export const DELAY_PENALTY = 1.2;
+export const DELAY_PENALTY = DEFAULT_KPI_CONFIG.delivery.delayPenalty;
 
 /**
  * 交付系数(3.4):
@@ -73,10 +151,11 @@ export const DELAY_PENALTY = 1.2;
  * - 工期 < 3 天或缺省:全额(1)/未交付(0)二选一,不再用减半
  */
 export function deliveryFactor(e: ScoreEntry): number {
+  const cfg = getActiveConfig().delivery;
   if (e.tier === 'online' || e.tier === 'ops') return 1;
   if (e.delivery === 'zero') return 0;
-  if (e.plannedDays && e.plannedDays >= 3) {
-    return Math.max(0, round1(1 - ((e.delayDays ?? 0) * DELAY_PENALTY) / e.plannedDays));
+  if (e.plannedDays && e.plannedDays >= cfg.formulaMinPlannedDays) {
+    return Math.max(0, round1(1 - ((e.delayDays ?? 0) * cfg.delayPenalty) / e.plannedDays));
   }
   // 工期 < 3 天或老数据:half 也按全额处理(短任务只看交付与否)
   return e.delivery === 'half' ? 0.5 : 1;
@@ -90,17 +169,17 @@ export function scoreFinal(e: ScoreEntry): number {
 
 // ---------- 4.2 / 4.3 扣分 ----------
 
-export const INCIDENT_BASE: Record<IncidentLevel, number> = { asset: 300, P0: 150, P1: 50, P2: 15, minor: 0 };
+export const INCIDENT_BASE: Record<IncidentLevel, number> = DEFAULT_KPI_CONFIG.incidents.base;
 
 export const INCIDENT_LABEL: Record<IncidentLevel, string> = {
-  asset: '资损级',
+  asset: '资损违规级',
   P0: 'P0',
   P1: 'P1',
   P2: 'P2',
   minor: '小问题',
 };
 
-export const LIABILITY_FACTOR: Record<Liability, number> = { primary: 1, secondary: 0.5, none: 0 };
+export const LIABILITY_FACTOR: Record<Liability, number> = DEFAULT_KPI_CONFIG.incidents.liabilityFactor;
 
 export const LIABILITY_LABEL: Record<Liability, string> = {
   primary: '主责',
@@ -109,10 +188,10 @@ export const LIABILITY_LABEL: Record<Liability, string> = {
 };
 
 export const REPORTING_FACTOR: Record<Reporting, number> = {
-  proactive: 0.5,
-  passive: 1,
-  late: 1.2,
-  concealed: 1.5,
+  proactive: DEFAULT_KPI_CONFIG.incidents.reportingFactor.proactive,
+  passive: DEFAULT_KPI_CONFIG.incidents.reportingFactor.passive,
+  late: DEFAULT_KPI_CONFIG.incidents.reportingFactor.late,
+  concealed: DEFAULT_KPI_CONFIG.incidents.reportingFactor.concealed,
 };
 
 export const REPORTING_LABEL: Record<Reporting, string> = {
@@ -181,6 +260,7 @@ export interface CapInfo {
  * - 入职未满 6 个月:按已入职月份正分折算为年化正分后计算
  */
 export function deductionCap(member: Member, scores: ScoreEntry[], asOf: string): CapInfo {
+  const cfg = getActiveConfig().incidents;
   const tenure = tenureMonths(member.joinDate, asOf);
   const from12 = new Date(asOf);
   from12.setFullYear(from12.getFullYear() - 1);
@@ -190,16 +270,20 @@ export function deductionCap(member: Member, scores: ScoreEntry[], asOf: string)
 
   if (tenure < 6) {
     const annualized = tenure > 0.5 ? (positive / tenure) * 12 : positive * 12;
+    const ratioCap = round1(annualized * cfg.capRatio);
+    const cap = Math.min(ratioCap, cfg.capAbsolute);
     return {
-      cap: round1(annualized * 0.4),
-      basis: `入职 ${tenure.toFixed(1)} 个月,按年化正分 ${round1(annualized)} × 40%`,
+      cap,
+      basis: `入职 ${tenure.toFixed(1)} 个月,按年化正分 ${round1(annualized)} × ${Math.round(cfg.capRatio * 100)}%,绝对上限 ${cfg.capAbsolute}`,
       trailingPositive: positive,
       tenure,
     };
   }
+  const ratioCap = round1(positive * cfg.capRatio);
+  const cap = Math.min(ratioCap, cfg.capAbsolute);
   return {
-    cap: round1(positive * 0.4),
-    basis: `近 12 个月正分 ${positive} × 40%`,
+    cap,
+    basis: `近 12 个月正分 ${positive} × ${Math.round(cfg.capRatio * 100)}%,绝对上限 ${cfg.capAbsolute}`,
     trailingPositive: positive,
     tenure,
   };
@@ -222,13 +306,14 @@ export interface DeductionResult {
 
 /** 实际扣分 = 档位分 × 责任系数 × 报告系数,含封顶与新人保护(4.1 / 10.2 / 7.1) */
 export function computeDeduction(incident: IncidentEntry, member: Member, scores: ScoreEntry[]): DeductionResult {
-  const base = INCIDENT_BASE[incident.level];
-  const liabilityFactor = LIABILITY_FACTOR[incident.liability];
-  const reportingFactor = REPORTING_FACTOR[incident.reporting];
+  const cfg = getActiveConfig().incidents;
+  const base = cfg.base[incident.level];
+  const liabilityFactor = cfg.liabilityFactor[incident.liability];
+  const reportingFactor = cfg.reportingFactor[incident.reporting];
   const raw = round1(base * liabilityFactor * reportingFactor);
 
   const capInfo = deductionCap(member, scores, incident.date);
-  // 红线与资损级不适用封顶(4.1 / 4.2)
+  // 红线与资损违规级不适用封顶(4.1 / 4.2)
   const capExempt = incident.redline || incident.level === 'asset';
   let final = raw;
   let capApplied = false;
@@ -239,12 +324,12 @@ export function computeDeduction(incident: IncidentEntry, member: Member, scores
 
   let newbieHalved = false;
   const tenure = tenureMonths(member.joinDate, incident.date);
-  if (!capExempt && tenure < 3) {
+  if (!capExempt && tenure < cfg.newbieHalfMonths) {
     final = round1(final * 0.5);
     newbieHalved = true;
   }
 
-  const leadDeduction = incident.leadFault && incident.leadMemberId ? round1(final * 0.3) : 0;
+  const leadDeduction = incident.leadFault && incident.leadMemberId ? round1(final * cfg.leadDeductionRate) : 0;
 
   return {
     base,
@@ -258,6 +343,32 @@ export function computeDeduction(incident: IncidentEntry, member: Member, scores
     final: round1(final),
     leadDeduction,
   };
+}
+
+export interface AssetLossSuggestion {
+  netLoss: number;
+  suggestedLevel: IncidentLevel;
+  text: string;
+}
+
+export function assetLossSuggestion(incident: Pick<IncidentEntry, 'assetLoss'>): AssetLossSuggestion | null {
+  const assetLoss = incident.assetLoss;
+  if (!assetLoss) return null;
+  const cfg = getActiveConfig().assetLoss;
+  const netLoss = Math.max(0, round1((assetLoss.amount ?? 0) - (assetLoss.recovered ?? 0)));
+  if (assetLoss.processFollowed === false) {
+    return { netLoss, suggestedLevel: 'asset', text: `未按流程导致资损,建议资损违规级(${getActiveConfig().incidents.base.asset})` };
+  }
+  if (netLoss <= cfg.observeMax) {
+    return { netLoss, suggestedLevel: 'minor', text: `净损失 ≤ ${cfg.observeMax} ${cfg.currency},建议小问题/观察` };
+  }
+  if (netLoss <= cfg.p2Max) {
+    return { netLoss, suggestedLevel: 'P2', text: `净损失 ≤ ${cfg.p2Max} ${cfg.currency},建议 P2` };
+  }
+  if (netLoss <= cfg.p1Max) {
+    return { netLoss, suggestedLevel: 'P1', text: `净损失 ≤ ${cfg.p1Max} ${cfg.currency},建议 P1` };
+  }
+  return { netLoss, suggestedLevel: 'P0', text: `净损失 > ${cfg.p1Max} ${cfg.currency},建议 P0` };
 }
 
 // ---------- 4.4 小问题重复判定 ----------
@@ -293,8 +404,8 @@ export interface MemberTotals {
 }
 
 /** Leader 管理加成比例与每月封顶(7.3),集中于此便于调整 */
-export const LEAD_BONUS_RATE = 0.1;
-export const LEAD_BONUS_CAP = 15;
+export const LEAD_BONUS_RATE = DEFAULT_KPI_CONFIG.leader.bonusRate;
+export const LEAD_BONUS_CAP = DEFAULT_KPI_CONFIG.leader.monthlyCap;
 
 /** 某端管理加成的承接人:本端 Lead → 架构师 →(架构端)CTO */
 export function squadManager(data: AppData, squad: Squad): Member | undefined {
@@ -323,6 +434,7 @@ function monthsBetween(from: string, to: string): string[] {
  * 不含承接人本人的任务;只计正分任务(非 ops、实得 > 0)。
  */
 export function leadBonusInRange(data: AppData, from: string, to: string): Map<string, number> {
+  const cfg = getActiveConfig().leader;
   const result = new Map<string, number>();
   for (const month of monthsBetween(from, to)) {
     const mFrom = `${month}-01`;
@@ -336,10 +448,10 @@ export function leadBonusInRange(data: AppData, from: string, to: string): Map<s
       if (!member) continue;
       const mgr = squadManager(data, member.squad);
       if (!mgr || mgr.id === s.memberId) continue;
-      perRecipient.set(mgr.id, (perRecipient.get(mgr.id) ?? 0) + final * LEAD_BONUS_RATE);
+      perRecipient.set(mgr.id, (perRecipient.get(mgr.id) ?? 0) + final * cfg.bonusRate);
     }
     for (const [id, amt] of perRecipient) {
-      result.set(id, round1((result.get(id) ?? 0) + Math.min(amt, LEAD_BONUS_CAP)));
+      result.set(id, round1((result.get(id) ?? 0) + Math.min(amt, cfg.monthlyCap)));
     }
   }
   return result;
@@ -433,7 +545,7 @@ export function gradeHints(data: AppData, year: string): GradeHint[] {
     const rank = sorted.findIndex((s) => s.memberId === t.memberId) + 1;
     const percentile = sorted.length > 1 ? (rank - 1) / (sorted.length - 1) : 0;
     const mine = yearIncidents.filter((i) => i.memberId === t.memberId);
-    // 资损级视同 P0 主责处理(封顶 B)
+    // 资损违规级视同 P0 主责处理(封顶 B)
     const p0Primary = mine.some((i) => (i.level === 'P0' || i.level === 'asset') && i.liability === 'primary');
     const p1Primary = mine.some((i) => i.level === 'P1' && i.liability === 'primary');
     const redline = mine.some((i) => i.redline);

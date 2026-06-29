@@ -1,7 +1,7 @@
 // 种子示例数据:演示用,可在「团队设置」页一键清空或重置。
 
 import type { AppData, Member, ScoreEntry, Tier } from '../lib/types';
-import { addMonths, currentMonth } from '../lib/rules';
+import { addMonths, currentMonth, DEFAULT_KPI_CONFIG, normalizeKpiConfig } from '../lib/rules';
 
 // 确定性伪随机,保证每次重置得到相同演示数据
 function mulberry32(seed: number) {
@@ -231,7 +231,35 @@ export function seedData(): AppData {
       redline: true,
       leadFault: false,
       decidedBy: 'cto',
-      note: '资损级:基础扣 300,不封顶、不享高危保护,默认红线;相关期间正分失效由管理层手动执行',
+      assetLoss: {
+        amount: 860,
+        recovered: 0,
+        processFollowed: false,
+        suggestedLevel: 'asset',
+        note: '未按流程操作',
+      },
+      note: '资损违规级:基础扣 300,不封顶、不享高危保护,强制红线;相关期间正分失效由管理层手动执行',
+    },
+    {
+      id: 'seed-i-6',
+      date: isoDate(cm, 16),
+      memberId: 'be-1',
+      title: '按流程发布后出现小额资金误差',
+      category: '资产损失',
+      level: 'P2',
+      liability: 'secondary',
+      reporting: 'proactive',
+      redline: false,
+      leadFault: false,
+      decidedBy: 'cto',
+      assetLoss: {
+        amount: 180,
+        recovered: 20,
+        processFollowed: true,
+        suggestedLevel: 'P2',
+        note: '流程完整,主动报告并追回部分损失',
+      },
+      note: '按流程资损单列记录,系统建议 P2,最终级别由 CTO 评定',
     },
   ];
 
@@ -241,5 +269,6 @@ export function seedData(): AppData {
     incidents,
     archivedMonths: [m5, m4, m3, m2],
     annual: {},
+    config: normalizeKpiConfig(DEFAULT_KPI_CONFIG),
   };
 }

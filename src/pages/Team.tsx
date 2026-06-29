@@ -12,15 +12,25 @@ import {
   btnDanger,
   btnGhost,
   btnPrimary,
+  inputBase,
   inputCls,
 } from '../components/ui';
-import { tenureMonths, todayISO } from '../lib/rules';
-import type { Level, Member, Role, Squad } from '../lib/types';
+import {
+  DEFAULT_KPI_CONFIG,
+  INCIDENT_LABEL,
+  LIABILITY_LABEL,
+  normalizeKpiConfig,
+  REPORTING_LABEL,
+  tenureMonths,
+  TIER_LABEL,
+  todayISO,
+} from '../lib/rules';
+import type { IncidentLevel, KpiRuleConfig, Level, Liability, Member, Reporting, Role, Squad, Tier } from '../lib/types';
 import { LEVEL_LABEL, ROLE_LABEL, SQUADS } from '../lib/types';
 import { isManager, useCurrentMember, useStore, uid } from '../store';
 
 export default function Team() {
-  const { data, upsertMember, removeMember, exportJson, importJson, resetSeed, notify } = useStore();
+  const { data, upsertMember, removeMember, exportJson, importJson, resetSeed, notify, setRuleConfig } = useStore();
   const me = useCurrentMember();
   const manager = isManager(me);
   const [editing, setEditing] = useState<Member | null>(null);
@@ -117,6 +127,17 @@ export default function Team() {
         </table>
       </Card>
 
+      {manager && (
+        <RuleSettings
+          config={normalizeKpiConfig(data.config)}
+          onChange={setRuleConfig}
+          onReset={() => {
+            setRuleConfig(DEFAULT_KPI_CONFIG);
+            notify('已恢复默认规则配置');
+          }}
+        />
+      )}
+
       <Card title="数据管理">
         <Info>
           当前数据保存在本机浏览器(localStorage);后端上线前,可用导出/导入 JSON 在成员间同步。导出文件含薪酬敏感信息,请勿外传。
@@ -186,6 +207,179 @@ export default function Team() {
         />
       )}
     </div>
+  );
+}
+
+const TIER_KEYS: Tier[] = ['small', 'medium', 'large', 'xlarge', 'online', 'ops'];
+const INCIDENT_KEYS: IncidentLevel[] = ['asset', 'P0', 'P1', 'P2', 'minor'];
+const LIABILITY_KEYS: Liability[] = ['primary', 'secondary', 'none'];
+const REPORTING_KEYS: Reporting[] = ['proactive', 'passive', 'late', 'concealed'];
+
+function RuleSettings({
+  config,
+  onChange,
+  onReset,
+}: {
+  config: KpiRuleConfig;
+  onChange: (config: KpiRuleConfig) => void;
+  onReset: () => void;
+}) {
+  const update = (fn: (next: KpiRuleConfig) => void) => {
+    const next = structuredClone(config);
+    fn(next);
+    onChange(normalizeKpiConfig(next));
+  };
+  const numInput = (value: number, onValue: (n: number) => void, className = 'w-20', step = 1) => (
+    <input
+      type="number"
+      step={step}
+      className={`${inputBase} ${className}`}
+      value={value}
+      onChange={(e) => onValue(Number(e.target.value))}
+    />
+  );
+
+  return (
+    <Card
+      title="规则设置"
+      extra={
+        <button className={btnGhost} onClick={onReset}>
+          恢复默认
+        </button>
+      }
+    >
+      <Info>这些数值会立即影响表单校验、实时预览、月度/年度看板与导出 JSON。档位名称固定,这里只调整数值。</Info>
+
+      <div className="mt-4 space-y-5">
+        <div>
+          <div className="mb-2 text-xs font-semibold text-slate-500">档位区间与默认分</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-400">
+                  <th className="py-2 pr-3 font-medium">档位</th>
+                  <th className="py-2 pr-3 font-medium">下限</th>
+                  <th className="py-2 pr-3 font-medium">上限</th>
+                  <th className="py-2 pr-3 font-medium">默认</th>
+                </tr>
+              </thead>
+              <tbody>
+                {TIER_KEYS.map((tier) => (
+                  <tr key={tier} className="border-b border-slate-50">
+                    <td className="py-2 pr-3 font-medium">{TIER_LABEL[tier]}</td>
+                    <td className="py-2 pr-3">
+                      {numInput(config.tiers[tier].min, (n) => update((next) => (next.tiers[tier].min = n)))}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {numInput(config.tiers[tier].max, (n) => update((next) => (next.tiers[tier].max = n)))}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {numInput(config.tiers[tier].defaultPoints, (n) => update((next) => (next.tiers[tier].defaultPoints = n)))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="mb-2 text-xs font-semibold text-slate-500">交付与 Leader</div>
+            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+              <Field label="延期惩罚系数">
+                {numInput(config.delivery.delayPenalty, (n) => update((next) => (next.delivery.delayPenalty = n)), 'w-full', 0.1)}
+              </Field>
+              <Field label="公式启用工期">
+                {numInput(config.delivery.formulaMinPlannedDays, (n) => update((next) => (next.delivery.formulaMinPlannedDays = n)), 'w-full')}
+              </Field>
+              <Field label="管理加成比例">
+                {numInput(config.leader.bonusRate, (n) => update((next) => (next.leader.bonusRate = n)), 'w-full', 0.01)}
+              </Field>
+              <Field label="管理加成月封顶">
+                {numInput(config.leader.monthlyCap, (n) => update((next) => (next.leader.monthlyCap = n)), 'w-full')}
+              </Field>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs font-semibold text-slate-500">封顶与新人保护</div>
+            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+              <Field label="扣分封顶比例">
+                {numInput(config.incidents.capRatio, (n) => update((next) => (next.incidents.capRatio = n)), 'w-full', 0.01)}
+              </Field>
+              <Field label="封顶绝对上限">
+                {numInput(config.incidents.capAbsolute, (n) => update((next) => (next.incidents.capAbsolute = n)), 'w-full')}
+              </Field>
+              <Field label="新人减半月数">
+                {numInput(config.incidents.newbieHalfMonths, (n) => update((next) => (next.incidents.newbieHalfMonths = n)), 'w-full')}
+              </Field>
+              <Field label="Lead 连带比例">
+                {numInput(config.incidents.leadDeductionRate, (n) => update((next) => (next.incidents.leadDeductionRate = n)), 'w-full', 0.01)}
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="mb-2 text-xs font-semibold text-slate-500">事故基础扣分</div>
+            <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3">
+              {INCIDENT_KEYS.map((level) => (
+                <Field key={level} label={INCIDENT_LABEL[level]}>
+                  {numInput(config.incidents.base[level], (n) => update((next) => (next.incidents.base[level] = n)), 'w-full')}
+                </Field>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs font-semibold text-slate-500">资损参考线</div>
+            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+              <Field label="观察上限">
+                {numInput(config.assetLoss.observeMax, (n) => update((next) => (next.assetLoss.observeMax = n)), 'w-full')}
+              </Field>
+              <Field label="P2 上限">
+                {numInput(config.assetLoss.p2Max, (n) => update((next) => (next.assetLoss.p2Max = n)), 'w-full')}
+              </Field>
+              <Field label="P1 上限">
+                {numInput(config.assetLoss.p1Max, (n) => update((next) => (next.assetLoss.p1Max = n)), 'w-full')}
+              </Field>
+              <Field label="币种">
+                <input
+                  className={inputCls}
+                  value={config.assetLoss.currency}
+                  onChange={(e) => update((next) => (next.assetLoss.currency = e.target.value))}
+                />
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="mb-2 text-xs font-semibold text-slate-500">责任系数</div>
+            <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3">
+              {LIABILITY_KEYS.map((key) => (
+                <Field key={key} label={LIABILITY_LABEL[key]}>
+                  {numInput(config.incidents.liabilityFactor[key], (n) => update((next) => (next.incidents.liabilityFactor[key] = n)), 'w-full', 0.1)}
+                </Field>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-xs font-semibold text-slate-500">报告系数</div>
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3">
+              {REPORTING_KEYS.map((key) => (
+                <Field key={key} label={REPORTING_LABEL[key]}>
+                  {numInput(config.incidents.reportingFactor[key], (n) => update((next) => (next.incidents.reportingFactor[key] = n)), 'w-full', 0.1)}
+                </Field>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 

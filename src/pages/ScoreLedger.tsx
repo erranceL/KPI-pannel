@@ -17,12 +17,11 @@ import {
   inputCls,
 } from '../components/ui';
 import {
-  TIER_DEFAULT_POINTS,
   TIER_LABEL,
-  TIER_RANGE,
   currentMonth,
   deliveryFactor,
   monthOf,
+  normalizeKpiConfig,
   round1,
   scoreFinal,
   todayISO,
@@ -211,6 +210,8 @@ function OpsCard({ month, archived }: { month: string; archived: boolean }) {
   const me = useCurrentMember();
   const [open, setOpen] = useState(false);
 
+  const config = normalizeKpiConfig(data.config);
+  const opsCfg = config.tiers.ops;
   const members = data.members.filter((m) => m.active);
   const entryOf = (id: string) => data.scores.find((s) => s.tier === 'ops' && s.memberId === id && monthOf(s.date) === month);
   const recorded = members.filter((m) => (entryOf(m.id)?.points ?? 0) > 0).length;
@@ -246,7 +247,9 @@ function OpsCard({ month, archived }: { month: string; archived: boolean }) {
       >
         {open ? <ChevronDown size={15} className="text-slate-400" /> : <ChevronRight size={15} className="text-slate-400" />}
         本月运维杂项
-        <span className="font-normal text-slate-400">每人每月一笔总账 0–10 分(3.9) · 已记 {recorded} 人</span>
+        <span className="font-normal text-slate-400">
+          每人每月一笔总账 {opsCfg.min}–{opsCfg.max} 分(3.9) · 已记 {recorded} 人
+        </span>
       </button>
       {open && (
         <div className="grid grid-cols-2 gap-x-8 gap-y-1 border-t border-slate-100 px-5 py-3">
@@ -260,8 +263,8 @@ function OpsCard({ month, archived }: { month: string; archived: boolean }) {
                 </div>
                 <input
                   type="range"
-                  min={0}
-                  max={10}
+                  min={opsCfg.min}
+                  max={opsCfg.max}
                   value={points}
                   disabled={archived}
                   className="min-w-0 flex-1 accent-indigo-600"
@@ -290,13 +293,14 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
   const { data, addScores, updateScore, notify } = useStore();
   const me = useCurrentMember();
   const activeMembers = data.members.filter((m) => m.active);
+  const config = normalizeKpiConfig(data.config);
   const editing = !!entry;
   const isSplitRow = !!entry?.splitGroupId;
 
   const [title, setTitle] = useState(entry?.title ?? '');
   const [date, setDate] = useState(entry?.date ?? todayISO());
   const [tier, setTier] = useState<Tier>(entry?.tier ?? 'medium');
-  const [points, setPoints] = useState(entry?.points ?? TIER_DEFAULT_POINTS.medium);
+  const [points, setPoints] = useState(entry?.points ?? config.tiers.medium.defaultPoints);
   const [tierReason, setTierReason] = useState(entry?.tierReason ?? '');
   // 交付:未交付勾选 + 工期/延期(≥3 天套公式)
   const [notDelivered, setNotDelivered] = useState(entry?.delivery === 'zero');
@@ -309,14 +313,17 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
 
   const [memberId, setMemberId] = useState(entry?.memberId ?? activeMembers[0]?.id ?? '');
   const [participants, setParticipants] = useState<Participant[]>([
-    { memberId: activeMembers[0]?.id ?? '', points: TIER_DEFAULT_POINTS.medium },
+    { memberId: activeMembers[0]?.id ?? '', points: config.tiers.medium.defaultPoints },
   ]);
 
-  const [min, max] = TIER_RANGE[tier];
+  const tierCfg = config.tiers[tier];
+  const min = tierCfg.min;
+  const max = tierCfg.max;
   const isOnline = tier === 'online';
-  const usesFormula = !isOnline && plannedDays >= 3; // 工期 ≥ 3 天才套延期公式
+  const usesFormula = !isOnline && plannedDays >= config.delivery.formulaMinPlannedDays;
   const split = !editing && participants.length > 1;
   const splitSum = participants.reduce((a, p) => a + (Number.isFinite(p.points) ? p.points : 0), 0);
+  const pointsOutOfRange = !validTierPoints(tier, points);
 
   // 实时交付系数与实得(线上/运维系数 1;未交付 0)
   const previewFactor = deliveryFactor({
@@ -337,17 +344,17 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
 
   const errors = {
     title: !title.trim() ? '请填写事项名称' : '',
-    points: !validTierPoints(tier, points) ? `${TIER_LABEL[tier]}档分值须为 ${min}–${max} 的整数` : '',
+    points: !editing && pointsOutOfRange ? `${TIER_LABEL[tier]}档分值须为 ${min}–${max} 的整数` : '',
     reason: (tier === 'large' || tier === 'xlarge') && !tierReason.trim() ? '大档及以上须备注进入该档的理由(3.2)' : '',
     split: split && splitSum > max ? `拆分合计 ${splitSum} 超过档位上限 ${max}(3.7)` : '',
     member: split && participants.some((p) => !p.memberId) ? '请选择所有协作成员' : '',
-    group: isSplitRow && groupSum > max ? `拆分组合计 ${groupSum} 超过档位上限 ${max}(3.7)` : '',
+    group: isSplitRow && groupSum > max && !editing ? `拆分组合计 ${groupSum} 超过档位上限 ${max}(3.7)` : '',
   };
   const canSave = !Object.values(errors).some(Boolean);
 
   const setTierAndPoints = (t: Tier) => {
     setTier(t);
-    const pts = TIER_DEFAULT_POINTS[t];
+    const pts = config.tiers[t].defaultPoints;
     setPoints(pts);
     if (!editing) setParticipants((ps) => (ps.length === 1 ? [{ ...ps[0], points: pts }] : ps));
     if (t === 'online' || t === 'ops') {
@@ -456,7 +463,7 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
                 }`}
                 onClick={() => setTierAndPoints(t)}
               >
-                {TIER_LABEL[t]} {TIER_RANGE[t][0]}–{TIER_RANGE[t][1]}
+                {TIER_LABEL[t]} {config.tiers[t].min}–{config.tiers[t].max}
               </button>
             ))}
           </div>
@@ -484,6 +491,11 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
               />
             </div>
             <FieldError text={touched ? errors.points : ''} />
+            {editing && pointsOutOfRange && (
+              <div className="mt-1 text-xs text-amber-600">
+                当前分值不在最新规则区间内,作为历史记录允许保存;新建记录会强制校验。
+              </div>
+            )}
           </Field>
         )}
 
@@ -562,9 +574,9 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
               </div>
             )}
             <div className="mt-1 text-xs text-slate-400">
-              {plannedDays > 0 && plannedDays < 3
-                ? '工期 < 3 天:不套延期公式,只看是否交付(全额/未交付)'
-                : '工期 ≥ 3 天:实得 = max(0, 1 − 延期天数 × 1.2 / 工期) × 分值;延期指超出约定/重排后期限的未预警天数(3.5)'}
+              {plannedDays > 0 && plannedDays < config.delivery.formulaMinPlannedDays
+                ? `工期 < ${config.delivery.formulaMinPlannedDays} 天:不套延期公式,只看是否交付(全额/未交付)`
+                : `工期 ≥ ${config.delivery.formulaMinPlannedDays} 天:实得 = max(0, 1 − 延期天数 × ${config.delivery.delayPenalty} / 工期) × 分值;延期指超出约定/重排后期限的未预警天数(3.5)`}
             </div>
           </Field>
         )}

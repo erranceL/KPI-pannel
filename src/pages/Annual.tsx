@@ -91,7 +91,7 @@ export default function Annual() {
       {tab === 'grade' && (
         <Card title="年度有效积分与评级(9.1)">
           <Info>
-            年度有效积分 = max(正分(含管理加成) − 扣分, 0);积分排名是必要条件而非充分条件,评级由评级会确定;资损级/P0 主责封顶 B,红线暂缓评定。
+            年度有效积分 = max(正分(含管理加成) − 扣分, 0);积分排名是必要条件而非充分条件,评级由评级会确定;资损违规级/P0 主责封顶 B,红线暂缓评定。
           </Info>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">

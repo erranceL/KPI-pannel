@@ -1,6 +1,7 @@
 // 存储适配器 —— 当前使用 localStorage;后端就绪后实现 RestApiAdapter 并在 store 中替换即可。
 
 import type { AppData } from '../lib/types';
+import { normalizeKpiConfig } from '../lib/rules';
 import { seedData } from './seed';
 
 export interface StorageAdapter {
@@ -18,7 +19,12 @@ export class LocalStorageAdapter implements StorageAdapter {
       try {
         const parsed = JSON.parse(raw) as AppData;
         if (parsed.members && parsed.scores && parsed.incidents) {
-          return { ...parsed, archivedMonths: parsed.archivedMonths ?? [], annual: parsed.annual ?? {} };
+          return {
+            ...parsed,
+            archivedMonths: parsed.archivedMonths ?? [],
+            annual: parsed.annual ?? {},
+            config: normalizeKpiConfig(parsed.config),
+          };
         }
       } catch {
         // 数据损坏时回退种子数据

@@ -16,16 +16,15 @@ import {
   inputCls,
 } from '../components/ui';
 import {
-  INCIDENT_BASE,
   INCIDENT_LABEL,
-  LIABILITY_FACTOR,
   LIABILITY_LABEL,
-  REPORTING_FACTOR,
   REPORTING_LABEL,
+  assetLossSuggestion,
   computeDeduction,
   currentMonth,
   minorRepeatCount,
   monthOf,
+  normalizeKpiConfig,
   todayISO,
 } from '../lib/rules';
 import type { IncidentEntry, IncidentLevel, Liability, Reporting } from '../lib/types';
@@ -38,6 +37,7 @@ export default function IncidentLedger() {
   const [month, setMonth] = useState(currentMonth());
   const [modal, setModal] = useState<null | { entry?: IncidentEntry }>(null);
 
+  const config = normalizeKpiConfig(data.config);
   const archived = data.archivedMonths.includes(month);
   const levelCap = maxIncidentLevel(me);
   const manager = isManager(me);
@@ -67,7 +67,7 @@ export default function IncidentLedger() {
       </PageHeader>
 
       <Info>
-        扣分 = 档位分 × 责任系数 × 报告系数(4.1);资损级/P0/P1 由 CTO 认定,P2 可由架构师认定(4.5);小问题不扣分,30 天内同类重复 2 次升级 P2(4.4)。资损级(未按流程导致资产损失)基础扣 300,不适用封顶与高危保护。
+        扣分 = 档位分 × 责任系数 × 报告系数(4.1);资损违规级/P0/P1 由 CTO 认定,P2 可由架构师认定(4.5);小问题不扣分,30 天内同类重复 2 次升级 P2(4.4)。资损单列记录事实与建议,最终级别仍由管理层评定。
       </Info>
 
       <Card>
@@ -90,6 +90,7 @@ export default function IncidentLedger() {
                   <th className="py-2 pr-3 font-medium">日期</th>
                   <th className="py-2 pr-3 font-medium">档位</th>
                   <th className="py-2 pr-3 font-medium">事项</th>
+                  <th className="py-2 pr-3 font-medium">资损</th>
                   <th className="py-2 pr-3 font-medium">责任人</th>
                   <th className="py-2 pr-3 font-medium">责任/报告</th>
                   <th className="py-2 pr-3 text-right font-medium">实际扣分</th>
@@ -102,6 +103,7 @@ export default function IncidentLedger() {
                 {entries.map((i) => {
                   const target = data.members.find((m) => m.id === i.memberId);
                   const r = target ? computeDeduction(i, target, data.scores) : null;
+                  const suggestion = assetLossSuggestion(i);
                   return (
                     <tr key={i.id} className="group border-b border-slate-50 transition-colors hover:bg-slate-50/60">
                       <td className="py-2.5 pr-3 whitespace-nowrap text-slate-400">{i.date.slice(5)}</td>
@@ -116,9 +118,24 @@ export default function IncidentLedger() {
                           {i.note ? ` · ${i.note}` : ''}
                         </div>
                       </td>
+                      <td className="py-2.5 pr-3 text-xs whitespace-nowrap text-slate-500">
+                        {suggestion ? (
+                          <div>
+                            <div>
+                              净损失 {suggestion.netLoss} {config.assetLoss.currency}
+                            </div>
+                            <div>
+                              {i.assetLoss?.processFollowed === false ? '未按流程' : '按流程'} · 建议 {INCIDENT_LABEL[suggestion.suggestedLevel]}
+                            </div>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="py-2.5 pr-3 font-medium">{memberName(i.memberId)}</td>
                       <td className="py-2.5 pr-3 text-xs whitespace-nowrap text-slate-500">
-                        {LIABILITY_LABEL[i.liability]} ×{LIABILITY_FACTOR[i.liability]} / ×{REPORTING_FACTOR[i.reporting]}
+                        {LIABILITY_LABEL[i.liability]} ×{config.incidents.liabilityFactor[i.liability]} / ×
+                        {config.incidents.reportingFactor[i.reporting]}
                       </td>
                       <td className="py-2.5 pr-3 text-right">
                         {r && (
@@ -174,6 +191,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
   const { data, addIncident, updateIncident, notify } = useStore();
   const me = useCurrentMember();
   const activeMembers = data.members.filter((m) => m.active);
+  const config = normalizeKpiConfig(data.config);
   const editing = !!entry;
 
   const levelCap = maxIncidentLevel(me);
@@ -191,6 +209,11 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
   const [leadFault, setLeadFault] = useState(!!entry?.leadFault);
   const [leadMemberId, setLeadMemberId] = useState(entry?.leadMemberId ?? '');
   const [hasChecklist, setHasChecklist] = useState(!!entry?.hasChecklist);
+  const [hasAssetLoss, setHasAssetLoss] = useState(!!entry?.assetLoss);
+  const [assetAmount, setAssetAmount] = useState(entry?.assetLoss?.amount ?? 0);
+  const [assetRecovered, setAssetRecovered] = useState(entry?.assetLoss?.recovered ?? 0);
+  const [processFollowed, setProcessFollowed] = useState(entry?.assetLoss?.processFollowed ?? true);
+  const [assetNote, setAssetNote] = useState(entry?.assetLoss?.note ?? '');
   const [note, setNote] = useState(entry?.note ?? '');
   const [touched, setTouched] = useState(false);
 
@@ -215,13 +238,23 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
     level,
     liability,
     reporting,
-    redline,
+    redline: level === 'asset' ? true : redline,
     leadFault,
     leadMemberId: leadFault ? leadMemberId : undefined,
     hasChecklist: hasChecklist || undefined,
+    assetLoss: hasAssetLoss
+      ? {
+          amount: assetAmount || undefined,
+          recovered: assetRecovered || undefined,
+          processFollowed,
+          note: assetNote.trim() || undefined,
+        }
+      : undefined,
     note: note.trim() || undefined,
     decidedBy: entry?.decidedBy ?? me?.id ?? '',
   };
+  const suggestion = assetLossSuggestion(draft);
+  if (draft.assetLoss && suggestion) draft.assetLoss.suggestedLevel = suggestion.suggestedLevel;
   const calc = target ? computeDeduction(draft, target, data.scores) : null;
 
   const repeats = category ? minorRepeatCount(data.incidents, memberId, category, date, entry?.id) : 0;
@@ -295,6 +328,51 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
             <FieldError text={touched ? errors.category : ''} />
           </Field>
 
+          <div className="space-y-3 rounded-xl bg-slate-50 p-4">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={hasAssetLoss} onChange={(e) => setHasAssetLoss(e.target.checked)} />
+              涉及资产/资金损失(单列记录)
+            </label>
+            {hasAssetLoss && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label={`损失金额(${config.assetLoss.currency})`}>
+                    <input
+                      type="number"
+                      min={0}
+                      className={inputCls}
+                      value={assetAmount || ''}
+                      onChange={(e) => setAssetAmount(Math.max(0, Number(e.target.value)))}
+                    />
+                  </Field>
+                  <Field label="已追回/已覆盖">
+                    <input
+                      type="number"
+                      min={0}
+                      className={inputCls}
+                      value={assetRecovered || ''}
+                      onChange={(e) => setAssetRecovered(Math.max(0, Number(e.target.value)))}
+                    />
+                  </Field>
+                </div>
+                <Field label="流程状态">
+                  <select className={inputCls} value={processFollowed ? 'yes' : 'no'} onChange={(e) => setProcessFollowed(e.target.value === 'yes')}>
+                    <option value="yes">按流程执行(Review/审批/回滚预案完整)</option>
+                    <option value="no">未按流程操作</option>
+                  </select>
+                </Field>
+                <Field label="资损备注">
+                  <input className={inputCls} value={assetNote} onChange={(e) => setAssetNote(e.target.value)} />
+                </Field>
+                {suggestion && (
+                  <Info>
+                    系统建议:{INCIDENT_LABEL[suggestion.suggestedLevel]} · {suggestion.text};最终事故级别仍由管理层人工选择。
+                  </Info>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* 2. 定级 */}
           <Field label={`档位(4.2)${levelCap !== 'P0' ? ' · 当前身份最高可记 ' + (levelCap === 'P2' ? 'P2' : '小问题') : ''}`}>
             <div className="flex flex-wrap gap-2">
@@ -315,7 +393,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
                   }}
                 >
                   {INCIDENT_LABEL[l]}
-                  {l !== 'minor' && ` −${INCIDENT_BASE[l]}`}
+                  {l !== 'minor' && ` −${config.incidents.base[l]}`}
                 </button>
               ))}
             </div>
@@ -327,7 +405,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
               <select className={inputCls} value={liability} onChange={(e) => setLiability(e.target.value as Liability)}>
                 {(['primary', 'secondary', 'none'] as Liability[]).map((l) => (
                   <option key={l} value={l}>
-                    {LIABILITY_LABEL[l]} ×{LIABILITY_FACTOR[l]}
+                    {LIABILITY_LABEL[l]} ×{config.incidents.liabilityFactor[l]}
                   </option>
                 ))}
               </select>
@@ -344,7 +422,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
               >
                 {(['proactive', 'passive', 'late', 'concealed'] as Reporting[]).map((r) => (
                   <option key={r} value={r}>
-                    {REPORTING_LABEL[r]} ×{REPORTING_FACTOR[r]}
+                    {REPORTING_LABEL[r]} ×{config.incidents.reportingFactor[r]}
                   </option>
                 ))}
               </select>
@@ -353,9 +431,15 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
 
           <div className="space-y-2.5 rounded-xl bg-slate-50 p-4">
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={redline} onChange={(e) => setRedline(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={level === 'asset' || redline}
+                disabled={level === 'asset'}
+                onChange={(e) => setRedline(e.target.checked)}
+              />
               标记红线审查(6.1)—— 不适用封顶,年度评级暂缓
             </label>
+            {level === 'asset' && <div className="text-xs text-red-600">资损违规级强制红线,不可取消。</div>}
             {level === 'minor' && (
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 <input type="checkbox" checked={hasChecklist} onChange={(e) => setHasChecklist(e.target.checked)} />
@@ -371,7 +455,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
                   if (e.target.checked && !leadMemberId) setLeadMemberId(squadLead);
                 }}
               />
-              Lead 管理失误,连带 30%(7.1)
+              Lead 管理失误,连带 {Math.round(config.incidents.leadDeductionRate * 100)}%(7.1)
             </label>
             {leadFault && (
               <div>
@@ -418,19 +502,23 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
                   <span className="font-medium">{calc.raw}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">封顶值(40%)</span>
+                  <span className="text-slate-500">封顶值({Math.round(config.incidents.capRatio * 100)}%)</span>
                   <span>{redline || level === 'asset' ? '不适用' : calc.cap}</span>
                 </div>
                 <div className="text-xs text-slate-400">{calc.capBasis}</div>
                 {calc.capApplied && <div className="text-xs font-medium text-amber-600">已按封顶取值(4.1)</div>}
-                {calc.newbieHalved && <div className="text-xs font-medium text-slate-500">入职未满 3 个月,扣分减半(10.2)</div>}
+                {calc.newbieHalved && (
+                  <div className="text-xs font-medium text-slate-500">
+                    入职未满 {config.incidents.newbieHalfMonths} 个月,扣分减半(10.2)
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base">
                   <span className="font-semibold">实际扣分</span>
                   <span className="font-bold text-red-600">−{calc.final}</span>
                 </div>
                 {leadFault && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Lead 连带(30%)</span>
+                    <span className="text-slate-500">Lead 连带({Math.round(config.incidents.leadDeductionRate * 100)}%)</span>
                     <span className="font-medium text-red-500">−{calc.leadDeduction}</span>
                   </div>
                 )}
@@ -448,7 +536,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
           )}
           {level === 'asset' && (
             <Warn>
-              资损级:基础扣 300,不适用封顶(4.1)与高危保护(5.1),默认按红线审查、认定人为 CTO;可与红线「相关期间正分失效(6.2)」叠加(由管理层手动执行)。
+              资损违规级:基础扣 {config.incidents.base.asset},不适用封顶(4.1)与高危保护(5.1),强制红线、认定人为 CTO;可与红线「相关期间正分失效(6.2)」叠加(由管理层手动执行)。
             </Warn>
           )}
           {reporting === 'concealed' && <Warn>隐瞒/误导将触发红线审查(4.3 / 6.1),已自动勾选红线标记。</Warn>}

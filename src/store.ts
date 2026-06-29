@@ -1,10 +1,15 @@
 import { create } from 'zustand';
-import type { AnnualConfig, AnnualMemberParams, AppData, IncidentEntry, Member, ScoreEntry } from './lib/types';
+import type { AnnualConfig, AnnualMemberParams, AppData, IncidentEntry, KpiRuleConfig, Member, ScoreEntry } from './lib/types';
+import { normalizeKpiConfig, setActiveConfig } from './lib/rules';
 import { LocalStorageAdapter, type StorageAdapter } from './data/adapter';
 
 const adapter: StorageAdapter = new LocalStorageAdapter();
 
-const EMPTY: AppData = { members: [], scores: [], incidents: [], archivedMonths: [], annual: {} };
+const EMPTY: AppData = { members: [], scores: [], incidents: [], archivedMonths: [], annual: {}, config: normalizeKpiConfig() };
+
+function normalizeIncident(entry: IncidentEntry): IncidentEntry {
+  return entry.level === 'asset' ? { ...entry, redline: true } : entry;
+}
 
 export function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -45,6 +50,7 @@ interface Store {
 
   setAnnualConfig: (year: string, patch: Partial<Omit<AnnualConfig, 'perMember'>>) => void;
   setAnnualMember: (year: string, memberId: string, patch: Partial<AnnualMemberParams>) => void;
+  setRuleConfig: (config: Partial<KpiRuleConfig>) => void;
 
   exportJson: () => string;
   importJson: (json: string) => string | null;
@@ -62,6 +68,8 @@ export const useStore = create<Store>((set, get) => ({
 
   load: async () => {
     const data = await adapter.load();
+    data.config = normalizeKpiConfig(data.config);
+    setActiveConfig(data.config);
     const userId = get().currentUserId;
     const valid = data.members.some((m) => m.id === userId);
     set({ data, loaded: true, currentUserId: valid ? userId : data.members[0]?.id ?? '' });
@@ -75,6 +83,8 @@ export const useStore = create<Store>((set, get) => ({
   mutate: (fn) => {
     const next: AppData = structuredClone(get().data);
     fn(next);
+    next.config = normalizeKpiConfig(next.config);
+    setActiveConfig(next.config);
     set({ data: next });
     void adapter.save(next);
   },
@@ -94,17 +104,18 @@ export const useStore = create<Store>((set, get) => ({
     });
   },
 
-  addIncident: (entry) => get().mutate((d) => d.incidents.push(entry)),
+  addIncident: (entry) => get().mutate((d) => d.incidents.push(normalizeIncident(entry))),
   updateIncident: (entry) =>
     get().mutate((d) => {
       const i = d.incidents.findIndex((s) => s.id === entry.id);
-      if (i >= 0) d.incidents[i] = entry;
+      if (i >= 0) d.incidents[i] = normalizeIncident(entry);
     }),
   removeIncident: (id) => {
     const prev = get().data;
     get().mutate((d) => (d.incidents = d.incidents.filter((s) => s.id !== id)));
     get().notify('已删除 1 条事故记录', () => {
       set({ data: prev });
+      setActiveConfig(prev.config);
       void adapter.save(prev);
     });
   },
@@ -139,6 +150,11 @@ export const useStore = create<Store>((set, get) => ({
       d.annual[year] = cfg;
     }),
 
+  setRuleConfig: (config) =>
+    get().mutate((d) => {
+      d.config = normalizeKpiConfig(config);
+    }),
+
   exportJson: () => JSON.stringify(get().data, null, 2),
 
   importJson: (json) => {
@@ -147,7 +163,14 @@ export const useStore = create<Store>((set, get) => ({
       if (!Array.isArray(parsed.members) || !Array.isArray(parsed.scores) || !Array.isArray(parsed.incidents)) {
         return '文件格式不正确:缺少 members / scores / incidents';
       }
-      const data: AppData = { ...parsed, archivedMonths: parsed.archivedMonths ?? [], annual: parsed.annual ?? {} };
+      const data: AppData = {
+        ...parsed,
+        archivedMonths: parsed.archivedMonths ?? [],
+        annual: parsed.annual ?? {},
+        config: normalizeKpiConfig(parsed.config),
+        incidents: parsed.incidents.map(normalizeIncident),
+      };
+      setActiveConfig(data.config);
       set({ data });
       void adapter.save(data);
       return null;
@@ -158,6 +181,8 @@ export const useStore = create<Store>((set, get) => ({
 
   resetSeed: async () => {
     const data = await adapter.reset();
+    data.config = normalizeKpiConfig(data.config);
+    setActiveConfig(data.config);
     set({ data });
   },
 }));
