@@ -9,7 +9,7 @@ export interface StorageAdapter {
   reset(): Promise<AppData>;
 }
 
-const STORAGE_KEY = 'kpi-pannel-data-v1';
+const STORAGE_KEY = 'kpi-pannel-data-v2-3';
 
 export class LocalStorageAdapter implements StorageAdapter {
   async load(): Promise<AppData> {
