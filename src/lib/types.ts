@@ -1,4 +1,4 @@
-// 数据类型定义 —— 与《研发绩效积分办法 v2.2(试行)》条款对应
+// 数据类型定义 —— 与《研发绩效积分办法 v2.3(试行)》条款对应
 
 export type Squad = '前端' | '后端' | '链端' | 'App' | 'DevOps' | 'QA' | '架构';
 
@@ -16,10 +16,10 @@ export interface Member {
   active: boolean;
 }
 
-/** 档位:小/中/大/特大/运维杂项(3.1 / 3.9) */
-export type Tier = 'small' | 'medium' | 'large' | 'xlarge' | 'ops';
+/** 档位:小/中/大/特大/线上问题处理/运维杂项(3.1 / 3.9) */
+export type Tier = 'small' | 'medium' | 'large' | 'xlarge' | 'online' | 'ops';
 
-/** 交付结果:全额/减半/0(3.4) */
+/** 交付结果:全额/减半/0(3.4);减半仅作老数据兼容,新数据用工期+延期公式 */
 export type Delivery = 'full' | 'half' | 'zero';
 
 export interface ScoreEntry {
@@ -28,10 +28,14 @@ export interface ScoreEntry {
   memberId: string;
   title: string;
   tier: Tier;
-  /** 档位分值;大档 25/30,特大 50,运维杂项 0–10 */
+  /** 档位分值,区间内取整(3.1):小 1–4 / 中 5–9 / 大 10–24 / 特大 25–50 / 线上 3–30 / 运维 0–10 */
   points: number;
   delivery: Delivery;
-  /** 大档及以上必填理由(3.2);大档记 30 须备注理由(3.1) */
+  /** 原计划工期(工作日,3.4);≥3 天才套延期公式,<3 天只用全额/未交付 */
+  plannedDays?: number;
+  /** 未预警、超出约定/重排后期限的延期天数(3.4 / 3.5) */
+  delayDays?: number;
+  /** 大档及以上必填进入该档的理由(3.2) */
   tierReason?: string;
   /** 特大档确认人(3.1),未确认则视为待确认 */
   xlConfirmedBy?: string;
@@ -45,8 +49,8 @@ export interface ScoreEntry {
   recordedBy: string; // memberId
 }
 
-/** 事故档位(4.2),minor = 小问题(4.4) */
-export type IncidentLevel = 'P0' | 'P1' | 'P2' | 'minor';
+/** 事故档位(4.2):资损级 > P0 > P1 > P2 > 小问题(4.4) */
+export type IncidentLevel = 'asset' | 'P0' | 'P1' | 'P2' | 'minor';
 
 /** 责任:主责/次责/无责(4.3) */
 export type Liability = 'primary' | 'secondary' | 'none';
@@ -78,15 +82,9 @@ export interface IncidentEntry {
 /** 年度评级(9.1) */
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 
-/** 年度分配参数(9.2 / 9.3),按年份保存 */
+/** 年度分配参数(9.2),按年份保存 */
 export interface AnnualMemberParams {
   grade?: Grade;
-  /** 长期贡献系数 0.8–1.5(9.3) */
-  longTerm?: number;
-  /** 风险调整系数 0–1.0(9.3) */
-  risk?: number;
-  /** 岗位基础配额(Token) */
-  baseQuota?: number;
 }
 
 export interface AnnualConfig {

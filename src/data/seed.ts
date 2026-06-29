@@ -1,6 +1,6 @@
 // 种子示例数据:演示用,可在「团队设置」页一键清空或重置。
 
-import type { AppData, Delivery, Member, ScoreEntry, Tier } from '../lib/types';
+import type { AppData, Member, ScoreEntry, Tier } from '../lib/types';
 import { addMonths, currentMonth } from '../lib/rules';
 
 // 确定性伪随机,保证每次重置得到相同演示数据
@@ -64,8 +64,30 @@ export function seedData(): AppData {
     medium: ['活动页改版', '订单查询接口开发', '行情模块联调', '回归测试一轮', '告警规则梳理'],
     large: ['提现限额逻辑改造', '撮合服务性能优化', '资金对账模块重构', '发布流水线自动化'],
     xlarge: ['跨链桥结算链路重构', '核心风控引擎升级'],
+    online: ['凌晨主动发现并修复支付回调异常', '周日支援排查行情卡顿', '定位并推动修复提现超时', '处理告警风暴并止损'],
     ops: ['当月发布/值班杂项'],
   };
+
+  // 区间内取整(3.1)
+  const rangePoints = (tier: Tier): number => {
+    switch (tier) {
+      case 'small':
+        return 1 + Math.floor(rand() * 4); // 1–4
+      case 'medium':
+        return 5 + Math.floor(rand() * 5); // 5–9
+      case 'large':
+        return 10 + Math.floor(rand() * 15); // 10–24
+      case 'xlarge':
+        return 25 + Math.floor(rand() * 26); // 25–50
+      case 'online':
+        return 3 + Math.floor(rand() * 28); // 3–30
+      default:
+        return 0;
+    }
+  };
+
+  const plannedOf = (tier: Tier): number =>
+    tier === 'small' ? 1 : tier === 'medium' ? 2 + Math.floor(rand() * 3) : tier === 'large' ? 5 + Math.floor(rand() * 6) : 12 + Math.floor(rand() * 9);
 
   const scores: ScoreEntry[] = [];
   let sid = 0;
@@ -83,8 +105,10 @@ export function seedData(): AppData {
           : tierRoll < 0.75 ? 'medium'
           : tierRoll < 0.95 ? 'large'
           : 'xlarge';
-        const points = tier === 'large' ? (rand() < 0.15 ? 30 : 25) : tier === 'xlarge' ? 50 : tier === 'small' ? 5 : 10;
-        const delivery: Delivery = rand() < 0.85 ? 'full' : rand() < 0.7 ? 'half' : 'zero';
+        const points = rangePoints(tier);
+        const planned = plannedOf(tier);
+        const zero = rand() < 0.06;
+        const delayDays = !zero && planned >= 3 && rand() < 0.18 ? 1 + Math.floor(rand() * 2) : 0;
         scores.push({
           id: `seed-s-${sid++}`,
           date: isoDate(month, 2 + Math.floor(rand() * 25)),
@@ -92,13 +116,33 @@ export function seedData(): AppData {
           title: pick(titles[tier]),
           tier,
           points,
-          delivery,
-          tierReason: tier === 'large' || tier === 'xlarge' ? (points === 30 ? '工作量接近 2 周' : '涉及资金路径,需审批与回滚预案') : undefined,
+          delivery: zero ? 'zero' : 'full',
+          plannedDays: planned,
+          delayDays: delayDays || undefined,
+          tierReason: tier === 'large' || tier === 'xlarge' ? '涉及资金路径,需审批与回滚预案' : undefined,
           xlConfirmedBy: tier === 'xlarge' ? 'arch' : undefined,
           reschedules: rand() < 0.12 ? 1 : 0,
           recordedBy: leadOf[m.squad],
         });
       }
+
+      // 线上问题处理(3.10):部分成员每月偶发
+      if ((m.squad === 'DevOps' || m.squad === '后端' || m.squad === '链端') && rand() < 0.4) {
+        scores.push({
+          id: `seed-s-${sid++}`,
+          date: isoDate(month, 8 + Math.floor(rand() * 18)),
+          memberId: m.id,
+          title: pick(titles.online),
+          tier: 'online',
+          points: 3 + Math.floor(rand() * 20), // 偏中高位
+          delivery: 'full',
+          tierReason: undefined,
+          reschedules: 0,
+          note: '主动发现/非工作时间支援,区间取高位',
+          recordedBy: leadOf[m.squad],
+        });
+      }
+
       // 运维杂项(3.9)
       if (m.squad === 'DevOps' || rand() < 0.4) {
         scores.push({
@@ -174,6 +218,20 @@ export function seedData(): AppData {
       leadMemberId: 'chain-lead',
       decidedBy: 'arch',
       note: '排期压缩导致 Review 缺位,Lead 连带 30%',
+    },
+    {
+      id: 'seed-i-5',
+      date: isoDate(m2, 9),
+      memberId: 'chain-1',
+      title: '未走审批手动改配置导致提现多发',
+      category: '资产损失',
+      level: 'asset',
+      liability: 'primary',
+      reporting: 'passive',
+      redline: true,
+      leadFault: false,
+      decidedBy: 'cto',
+      note: '资损级:基础扣 300,不封顶、不享高危保护,默认红线;相关期间正分失效由管理层手动执行',
     },
   ];
 

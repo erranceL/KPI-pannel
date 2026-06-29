@@ -17,21 +17,31 @@ import {
   inputCls,
 } from '../components/ui';
 import {
-  DELIVERY_FACTOR,
-  DELIVERY_LABEL,
   TIER_DEFAULT_POINTS,
   TIER_LABEL,
+  TIER_RANGE,
   currentMonth,
+  deliveryFactor,
   monthOf,
+  round1,
   scoreFinal,
   todayISO,
+  validTierPoints,
 } from '../lib/rules';
-import type { Delivery, Member, ScoreEntry, Tier } from '../lib/types';
+import type { Member, ScoreEntry, Tier } from '../lib/types';
 import { SQUADS } from '../lib/types';
 import { canConfirmXl, canRecordScores, useCurrentMember, useStore, uid } from '../store';
 
-const TIERS: Tier[] = ['small', 'medium', 'large', 'xlarge'];
-const DELIVERIES: Delivery[] = ['full', 'half', 'zero'];
+const TIERS: Tier[] = ['small', 'medium', 'large', 'xlarge', 'online'];
+
+/** 交付列展示:线上/运维不适用;否则按系数显示百分比 */
+function deliveryText(s: ScoreEntry): string {
+  if (s.tier === 'online' || s.tier === 'ops') return '—';
+  if (s.delivery === 'zero') return '未交付';
+  const f = deliveryFactor(s);
+  if (f >= 1) return '全额';
+  return `${Math.round(f * 100)}%`;
+}
 
 /** 成员下拉:按端分组 */
 function MemberOptions({ members }: { members: Member[] }) {
@@ -143,9 +153,7 @@ export default function ScoreLedger() {
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       <Badge>{TIER_LABEL[s.tier]} {s.points}</Badge>
                     </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap text-xs text-slate-500">
-                      {DELIVERY_LABEL[s.delivery].split('(')[0]}
-                    </td>
+                    <td className="py-2.5 pr-3 whitespace-nowrap text-xs text-slate-500">{deliveryText(s)}</td>
                     <td className="py-2.5 pr-3 text-right font-semibold tabular-nums">{scoreFinal(s)}</td>
                     <td className="py-2.5 pr-3 space-x-1 whitespace-nowrap">
                       {s.selfFix && <Badge color="amber">自修不计分</Badge>}
@@ -288,49 +296,75 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
   const [title, setTitle] = useState(entry?.title ?? '');
   const [date, setDate] = useState(entry?.date ?? todayISO());
   const [tier, setTier] = useState<Tier>(entry?.tier ?? 'medium');
-  const [largePoints, setLargePoints] = useState<25 | 30>(entry?.tier === 'large' && entry.points === 30 ? 30 : 25);
+  const [points, setPoints] = useState(entry?.points ?? TIER_DEFAULT_POINTS.medium);
   const [tierReason, setTierReason] = useState(entry?.tierReason ?? '');
-  const [delivery, setDelivery] = useState<Delivery>(entry?.delivery ?? 'full');
+  // 交付:未交付勾选 + 工期/延期(≥3 天套公式)
+  const [notDelivered, setNotDelivered] = useState(entry?.delivery === 'zero');
+  const [plannedDays, setPlannedDays] = useState(entry?.plannedDays ?? 0);
+  const [delayDays, setDelayDays] = useState(entry?.delayDays ?? 0);
   const [reschedules, setReschedules] = useState(entry?.reschedules ?? 0);
   const [selfFix, setSelfFix] = useState(!!entry?.selfFix);
   const [showMore, setShowMore] = useState(editing ? (entry.reschedules ?? 0) > 0 || !!entry.selfFix : false);
   const [touched, setTouched] = useState(false);
 
-  // 编辑模式:单行;创建模式:支持多人拆分
   const [memberId, setMemberId] = useState(entry?.memberId ?? activeMembers[0]?.id ?? '');
-  const [rowPoints, setRowPoints] = useState(entry?.points ?? 0);
   const [participants, setParticipants] = useState<Participant[]>([
     { memberId: activeMembers[0]?.id ?? '', points: TIER_DEFAULT_POINTS.medium },
   ]);
 
-  const tierPoints = tier === 'large' ? largePoints : TIER_DEFAULT_POINTS[tier];
+  const [min, max] = TIER_RANGE[tier];
+  const isOnline = tier === 'online';
+  const usesFormula = !isOnline && plannedDays >= 3; // 工期 ≥ 3 天才套延期公式
   const split = !editing && participants.length > 1;
   const splitSum = participants.reduce((a, p) => a + (Number.isFinite(p.points) ? p.points : 0), 0);
 
-  // 编辑拆分行:校验组内总分(3.7)
+  // 实时交付系数与实得(线上/运维系数 1;未交付 0)
+  const previewFactor = deliveryFactor({
+    tier,
+    delivery: notDelivered ? 'zero' : 'full',
+    plannedDays,
+    delayDays,
+  } as ScoreEntry);
+
+  // 编辑拆分行:组内总分不得超过该档上限(3.7)
   const groupSum = useMemo(() => {
     if (!isSplitRow) return 0;
     const others = data.scores
       .filter((s) => s.splitGroupId === entry!.splitGroupId && s.id !== entry!.id)
       .reduce((a, s) => a + s.points, 0);
-    return others + rowPoints;
-  }, [data, entry, isSplitRow, rowPoints]);
+    return others + points;
+  }, [data, entry, isSplitRow, points]);
 
-  // 行内即时校验
   const errors = {
     title: !title.trim() ? '请填写事项名称' : '',
+    points: !validTierPoints(tier, points) ? `${TIER_LABEL[tier]}档分值须为 ${min}–${max} 的整数` : '',
     reason: (tier === 'large' || tier === 'xlarge') && !tierReason.trim() ? '大档及以上须备注进入该档的理由(3.2)' : '',
-    split: split && splitSum > tierPoints ? `拆分合计 ${splitSum} 超过档位上限 ${tierPoints}(3.7)` : '',
+    split: split && splitSum > max ? `拆分合计 ${splitSum} 超过档位上限 ${max}(3.7)` : '',
     member: split && participants.some((p) => !p.memberId) ? '请选择所有协作成员' : '',
-    group: isSplitRow && groupSum > tierPoints ? `拆分组合计 ${groupSum} 超过档位上限 ${tierPoints}(3.7)` : '',
+    group: isSplitRow && groupSum > max ? `拆分组合计 ${groupSum} 超过档位上限 ${max}(3.7)` : '',
   };
   const canSave = !Object.values(errors).some(Boolean);
 
   const setTierAndPoints = (t: Tier) => {
     setTier(t);
-    const pts = t === 'large' ? largePoints : TIER_DEFAULT_POINTS[t];
+    const pts = TIER_DEFAULT_POINTS[t];
+    setPoints(pts);
     if (!editing) setParticipants((ps) => (ps.length === 1 ? [{ ...ps[0], points: pts }] : ps));
-    else if (!isSplitRow) setRowPoints(pts);
+    if (t === 'online' || t === 'ops') {
+      setNotDelivered(false);
+      setPlannedDays(0);
+      setDelayDays(0);
+    }
+  };
+
+  const deliveryFields = (): Pick<ScoreEntry, 'delivery' | 'plannedDays' | 'delayDays'> => {
+    if (isOnline) return { delivery: 'full' };
+    if (notDelivered) return { delivery: 'zero' };
+    return {
+      delivery: 'full',
+      plannedDays: plannedDays > 0 ? plannedDays : undefined,
+      delayDays: usesFormula && delayDays > 0 ? delayDays : undefined,
+    };
   };
 
   const save = () => {
@@ -344,8 +378,8 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
         date,
         memberId,
         tier,
-        points: isSplitRow ? rowPoints : tierPoints,
-        delivery,
+        points,
+        ...deliveryFields(),
         tierReason: tierReason.trim() || undefined,
         reschedules,
         selfFix: selfFix || undefined,
@@ -354,6 +388,7 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
       notify('已保存修改');
     } else {
       const groupId = split ? uid('grp') : undefined;
+      const df = deliveryFields();
       addScores(
         participants.map((p) => ({
           id: uid('s'),
@@ -361,8 +396,8 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
           memberId: p.memberId,
           title: title.trim(),
           tier,
-          points: split ? p.points : tierPoints,
-          delivery,
+          points: split ? p.points : points,
+          ...df,
           tierReason: tierReason.trim() || undefined,
           reschedules,
           splitGroupId: groupId,
@@ -411,43 +446,51 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
         )}
 
         <Field label="档位(3.1)">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {TIERS.map((t) => (
               <button
                 key={t}
                 disabled={isSplitRow && t !== tier}
-                className={`rounded-lg border px-3.5 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                className={`rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                   tier === t ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
                 }`}
                 onClick={() => setTierAndPoints(t)}
               >
-                {TIER_LABEL[t]} {t === 'large' ? '25/30' : TIER_DEFAULT_POINTS[t]}
+                {TIER_LABEL[t]} {TIER_RANGE[t][0]}–{TIER_RANGE[t][1]}
               </button>
             ))}
           </div>
-          {isSplitRow && <div className="mt-1 text-xs text-slate-400">拆分行不可改档;调整分值见下方</div>}
+          {isSplitRow && <div className="mt-1 text-xs text-slate-400">拆分行不可改档;调整本行分值见下方</div>}
         </Field>
 
-        {tier === 'large' && !isSplitRow && (
-          <Field label="大档分值">
-            <div className="flex gap-2">
-              {([25, 30] as const).map((p) => (
-                <button
-                  key={p}
-                  className={`rounded-lg border px-3.5 py-1.5 text-sm transition-colors ${
-                    largePoints === p ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                  }`}
-                  onClick={() => {
-                    setLargePoints(p);
-                    if (!editing) setParticipants((ps) => (ps.length === 1 ? [{ ...ps[0], points: p }] : ps));
-                    else setRowPoints(p);
-                  }}
-                >
-                  {p} 分{p === 30 ? '(接近 2 周工作量)' : ''}
-                </button>
-              ))}
+        {!split && (
+          <Field label={`分值(${TIER_LABEL[tier]}档 ${min}–${max})`}>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={min}
+                max={max}
+                value={points}
+                onChange={(e) => setPoints(Number(e.target.value))}
+                className="min-w-0 flex-1 accent-indigo-600"
+              />
+              <input
+                type="number"
+                min={min}
+                max={max}
+                value={points}
+                onChange={(e) => setPoints(Number(e.target.value))}
+                className={inputBase + ' w-20'}
+              />
             </div>
+            <FieldError text={touched ? errors.points : ''} />
           </Field>
+        )}
+
+        {isOnline && (
+          <Info>
+            线上问题处理(3.1):及时响应基础分 3;主动发现 &gt; 用户发现 &gt; 老板发现、下班后/周日支援、给出正确分析并推动解决(即便他人执行)→ 区间内取高位。自己 bug 导致的线上问题不计本项正分,按严重程度分级——小问题不扣分、达 P2 及以上改记问题与事故台账。
+          </Info>
         )}
 
         {(tier === 'large' || tier === 'xlarge') && (
@@ -467,27 +510,64 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
         )}
 
         {isSplitRow && (
-          <Field label={`本行分值(拆分组上限 ${tierPoints})`}>
+          <Field label={`本行分值(拆分组上限 ${max})`}>
             <input
               type="number"
               min={0}
               className={inputBase + ' w-28'}
-              value={rowPoints}
-              onChange={(e) => setRowPoints(Number(e.target.value))}
+              value={points}
+              onChange={(e) => setPoints(Number(e.target.value))}
             />
             <FieldError text={errors.group} />
           </Field>
         )}
 
-        <Field label="交付结果(3.4)">
-          <select className={inputCls} value={delivery} onChange={(e) => setDelivery(e.target.value as Delivery)}>
-            {DELIVERIES.map((d) => (
-              <option key={d} value={d}>
-                {DELIVERY_LABEL[d]} ×{DELIVERY_FACTOR[d]}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {!isOnline && (
+          <Field label="交付(3.4)">
+            <label className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={notDelivered} onChange={(e) => setNotDelivered(e.target.checked)} />
+              未交付 / 到期才暴露做不完(0 分)
+            </label>
+            {!notDelivered && (
+              <div className="flex flex-wrap items-end gap-4 rounded-lg bg-slate-50 p-3">
+                <label className="text-xs text-slate-500">
+                  <div className="mb-1">原计划工期(工作日)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    className={inputBase + ' w-28'}
+                    value={plannedDays || ''}
+                    placeholder="如 5"
+                    onChange={(e) => setPlannedDays(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  <div className="mb-1">实际延期(天)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    className={inputBase + ' w-28'}
+                    value={delayDays || ''}
+                    placeholder="0"
+                    disabled={!usesFormula}
+                    onChange={(e) => setDelayDays(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+                <div className="text-sm">
+                  <div className="text-xs text-slate-500">交付系数 → 实得</div>
+                  <div className="font-semibold tabular-nums">
+                    ×{previewFactor} → {round1(points * previewFactor)}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="mt-1 text-xs text-slate-400">
+              {plannedDays > 0 && plannedDays < 3
+                ? '工期 < 3 天:不套延期公式,只看是否交付(全额/未交付)'
+                : '工期 ≥ 3 天:实得 = max(0, 1 − 延期天数 × 1.2 / 工期) × 分值;延期指超出约定/重排后期限的未预警天数(3.5)'}
+            </div>
+          </Field>
+        )}
 
         <button
           className="flex items-center gap-1 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700"
@@ -548,7 +628,7 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
                           onClick={() =>
                             setParticipants((ps) => {
                               const next = ps.filter((_, i) => i !== idx);
-                              return next.length === 1 ? [{ ...next[0], points: tierPoints }] : next;
+                              return next.length === 1 ? [{ ...next[0], points }] : next;
                             })
                           }
                         >
@@ -565,7 +645,7 @@ function ScoreModal({ entry, onClose }: { entry?: ScoreEntry; onClose: () => voi
                   </button>
                   {split && (
                     <div className={`text-xs ${errors.split ? 'font-medium text-red-600' : 'text-slate-400'}`}>
-                      拆分合计 {splitSum} / 档位上限 {tierPoints}
+                      拆分合计 {splitSum} / 档位上限 {max}
                     </div>
                   )}
                   <FieldError text={errors.member} />

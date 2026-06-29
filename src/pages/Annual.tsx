@@ -1,22 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Badge, Card, Info, PageHeader, Warn, inputBase } from '../components/ui';
-import {
-  GRADE_FACTOR,
-  LEVEL_FACTOR,
-  annualTotals,
-  gradeHints,
-  round1,
-  simulateBonus,
-  suggestRisk,
-  tokenQuota,
-} from '../lib/rules';
+import { GRADE_FACTOR, annualTotals, gradeHints, round1, simulateBonus } from '../lib/rules';
 import type { Grade } from '../lib/types';
 import { LEVEL_LABEL } from '../lib/types';
 import { isManager, useCurrentMember, useStore } from '../store';
 
 const GRADES: Grade[] = ['S', 'A', 'B', 'C', 'D'];
 
-type Tab = 'grade' | 'bonus' | 'token';
+type Tab = 'grade' | 'bonus';
 
 export default function Annual() {
   const { data, setAnnualConfig, setAnnualMember } = useStore();
@@ -68,7 +59,6 @@ export default function Annual() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'grade', label: '评级' },
     { key: 'bonus', label: '年终奖模拟' },
-    { key: 'token', label: 'Token 模拟' },
   ];
 
   return (
@@ -101,7 +91,7 @@ export default function Annual() {
       {tab === 'grade' && (
         <Card title="年度有效积分与评级(9.1)">
           <Info>
-            年度有效积分 = max(正分 − 扣分, 0);积分排名是必要条件而非充分条件,评级由评级会确定;P0 主责封顶 B,红线暂缓评定。
+            年度有效积分 = max(正分(含管理加成) − 扣分, 0);积分排名是必要条件而非充分条件,评级由评级会确定;资损级/P0 主责封顶 B,红线暂缓评定。
           </Info>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
@@ -142,7 +132,7 @@ export default function Annual() {
                       <td className="py-2.5 pr-3 text-right font-bold tabular-nums">{t.effective}</td>
                       <td className="py-2.5 pr-3 space-x-1">
                         {h?.redline && <Badge color="red">红线·暂缓评定</Badge>}
-                        {h?.p0Primary && <Badge color="amber">P0 主责·封顶 B</Badge>}
+                        {h?.p0Primary && <Badge color="amber">P0/资损主责·封顶 B</Badge>}
                         {h?.p1Primary && !h.p0Primary && <Badge color="amber">P1 主责</Badge>}
                         {h?.belowHalfMedian && <Badge>低于中位数 50%</Badge>}
                       </td>
@@ -249,129 +239,7 @@ export default function Annual() {
         </Card>
       )}
 
-      {tab === 'token' && (
-        <Card title="Token 配额模拟(9.3)">
-          <Info>
-            个人 Token 配额 = 岗位基础配额 × 职级系数 × 年度绩效系数 × 长期贡献系数 × 风险调整系数;职级未映射前一律按 1.0。点行内「调整」修改参数。
-          </Info>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs text-slate-400">
-                  <th className="py-2 pr-3 font-medium">姓名</th>
-                  <th className="py-2 pr-3 text-right font-medium">基础配额</th>
-                  <th className="py-2 pr-3 text-right font-medium">职级</th>
-                  <th className="py-2 pr-3 text-right font-medium">绩效</th>
-                  <th className="py-2 pr-3 text-right font-medium">长期贡献</th>
-                  <th className="py-2 pr-3 text-right font-medium">风险</th>
-                  <th className="py-2 pr-3 text-right font-medium">配额</th>
-                  <th className="w-16 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {totals.map((t) => (
-                  <TokenRow key={t.memberId} memberId={t.memberId} year={year} gradeOf={gradeOf} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 text-xs text-slate-400">
-            归属周期 4 年、1 年 cliff,离职与税务以 Token 授予协议为准(9.4);长期贡献系数由 CTO 逐项书面说明后填入。
-          </div>
-        </Card>
-      )}
     </div>
-  );
-}
-
-/** Token 行:默认只读展示,点「调整」展开输入 */
-function TokenRow({ memberId, year, gradeOf }: { memberId: string; year: string; gradeOf: (id: string) => Grade }) {
-  const { data, setAnnualMember } = useStore();
-  const [editing, setEditing] = useState(false);
-
-  const m = data.members.find((x) => x.id === memberId);
-  if (!m) return null;
-
-  const cfg = data.annual[year] ?? { budget: 0, coefficient: 1, perMember: {} };
-  const p = cfg.perMember[memberId] ?? {};
-  const grade = gradeOf(memberId);
-  const riskSug = suggestRisk(data, memberId, year);
-  const base = p.baseQuota ?? 100;
-  const longTerm = p.longTerm ?? 1;
-  const risk = p.risk ?? riskSug.value;
-  const quota = tokenQuota(base, m.level === 'unmapped' ? 'L2' : m.level, grade, longTerm, risk);
-
-  const smallInput = 'w-20 rounded-lg border border-slate-300 px-2 py-1 text-right text-sm transition-colors focus:border-indigo-500 focus:outline-none';
-
-  return (
-    <tr className="border-b border-slate-50">
-      <td className="py-2.5 pr-3 font-medium">{m.name}</td>
-      <td className="py-2.5 pr-3 text-right tabular-nums">
-        {editing ? (
-          <input
-            type="number"
-            className={smallInput + ' w-24'}
-            value={base}
-            onChange={(e) => setAnnualMember(year, memberId, { baseQuota: Number(e.target.value) })}
-          />
-        ) : (
-          base.toLocaleString()
-        )}
-      </td>
-      <td className="py-2.5 pr-3 text-right tabular-nums text-slate-500">
-        ×{LEVEL_FACTOR[m.level]}
-        {m.level === 'unmapped' && <div className="text-xs text-amber-600">未映射按 1.0</div>}
-      </td>
-      <td className="py-2.5 pr-3 text-right tabular-nums text-slate-500">
-        {grade} ×{GRADE_FACTOR[grade]}
-      </td>
-      <td className="py-2.5 pr-3 text-right tabular-nums">
-        {editing ? (
-          <input
-            type="number"
-            step={0.05}
-            min={0.8}
-            max={1.5}
-            className={smallInput}
-            value={longTerm}
-            onChange={(e) => setAnnualMember(year, memberId, { longTerm: Number(e.target.value) })}
-          />
-        ) : (
-          <span className="text-slate-500">×{longTerm}</span>
-        )}
-      </td>
-      <td className="py-2.5 pr-3 text-right tabular-nums">
-        {editing ? (
-          <div>
-            <input
-              type="number"
-              step={0.05}
-              min={0}
-              max={1}
-              className={smallInput}
-              value={risk}
-              onChange={(e) => setAnnualMember(year, memberId, { risk: Number(e.target.value) })}
-            />
-            <div className="mt-0.5 text-xs text-slate-400">{riskSug.reason}</div>
-          </div>
-        ) : (
-          <span className="text-slate-500" title={riskSug.reason}>
-            ×{risk}
-          </span>
-        )}
-      </td>
-      <td className="py-2.5 pr-3 text-right text-base font-bold tabular-nums">{quota.toLocaleString()}</td>
-      <td className="py-2.5 text-right">
-        <button
-          className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-            editing ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
-          }`}
-          onClick={() => setEditing(!editing)}
-        >
-          {editing ? '完成' : '调整'}
-        </button>
-      </td>
-    </tr>
   );
 }
 

@@ -67,7 +67,7 @@ export default function IncidentLedger() {
       </PageHeader>
 
       <Info>
-        扣分 = 档位分 × 责任系数 × 报告系数(4.1);P0/P1 由 CTO 认定,P2 可由架构师认定(4.5);小问题不扣分,30 天内同类重复 2 次升级 P2(4.4)。
+        扣分 = 档位分 × 责任系数 × 报告系数(4.1);资损级/P0/P1 由 CTO 认定,P2 可由架构师认定(4.5);小问题不扣分,30 天内同类重复 2 次升级 P2(4.4)。资损级(未按流程导致资产损失)基础扣 300,不适用封顶与高危保护。
       </Info>
 
       <Card>
@@ -178,7 +178,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
 
   const levelCap = maxIncidentLevel(me);
   const allowedLevels: IncidentLevel[] =
-    levelCap === 'P0' ? ['P0', 'P1', 'P2', 'minor'] : levelCap === 'P2' ? ['P2', 'minor'] : ['minor'];
+    levelCap === 'P0' ? ['asset', 'P0', 'P1', 'P2', 'minor'] : levelCap === 'P2' ? ['P2', 'minor'] : ['minor'];
 
   const [memberId, setMemberId] = useState(entry?.memberId ?? activeMembers[0]?.id ?? '');
   const [date, setDate] = useState(entry?.date ?? todayISO());
@@ -297,15 +297,22 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
 
           {/* 2. 定级 */}
           <Field label={`档位(4.2)${levelCap !== 'P0' ? ' · 当前身份最高可记 ' + (levelCap === 'P2' ? 'P2' : '小问题') : ''}`}>
-            <div className="flex gap-2">
-              {(['P0', 'P1', 'P2', 'minor'] as IncidentLevel[]).map((l) => (
+            <div className="flex flex-wrap gap-2">
+              {(['asset', 'P0', 'P1', 'P2', 'minor'] as IncidentLevel[]).map((l) => (
                 <button
                   key={l}
                   disabled={!allowedLevels.includes(l)}
-                  className={`rounded-lg border px-3.5 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
-                    level === l ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
+                    level === l
+                      ? l === 'asset'
+                        ? 'border-red-500 bg-red-50 text-red-700'
+                        : 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-300 text-slate-600 hover:bg-slate-50'
                   }`}
-                  onClick={() => setLevel(l)}
+                  onClick={() => {
+                    setLevel(l);
+                    if (l === 'asset') setRedline(true);
+                  }}
                 >
                   {INCIDENT_LABEL[l]}
                   {l !== 'minor' && ` −${INCIDENT_BASE[l]}`}
@@ -412,7 +419,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">封顶值(40%)</span>
-                  <span>{redline ? '不适用(红线)' : calc.cap}</span>
+                  <span>{redline || level === 'asset' ? '不适用' : calc.cap}</span>
                 </div>
                 <div className="text-xs text-slate-400">{calc.capBasis}</div>
                 {calc.capApplied && <div className="text-xs font-medium text-amber-600">已按封顶取值(4.1)</div>}
@@ -437,6 +444,11 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
             <Warn>
               30 天内该责任人「{category}」类问题已有 {repeats} 条,本条为第 {repeats + 1} 条:
               {hasChecklist ? '已有规范/清单,按 4.4 应升级为 P2 记录。' : '尚无规范/清单,应优先补充流程,不直接升级扣分(4.4)。'}
+            </Warn>
+          )}
+          {level === 'asset' && (
+            <Warn>
+              资损级:基础扣 300,不适用封顶(4.1)与高危保护(5.1),默认按红线审查、认定人为 CTO;可与红线「相关期间正分失效(6.2)」叠加(由管理层手动执行)。
             </Warn>
           )}
           {reporting === 'concealed' && <Warn>隐瞒/误导将触发红线审查(4.3 / 6.1),已自动勾选红线标记。</Warn>}

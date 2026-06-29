@@ -4,6 +4,7 @@ import {
   TIER_LABEL,
   addMonths,
   currentMonth,
+  onlineHandlingStats,
   repeatedMinors,
   rescheduleStats,
   tierStatsBySquad,
@@ -16,8 +17,11 @@ const TIER_COLORS: Record<Tier, string> = {
   medium: 'bg-sky-400',
   large: 'bg-indigo-500',
   xlarge: 'bg-violet-600',
+  online: 'bg-emerald-500',
   ops: 'bg-slate-200',
 };
+
+const BAR_TIERS: Tier[] = ['small', 'medium', 'large', 'xlarge', 'online'];
 
 export default function Observation() {
   const { data } = useStore();
@@ -27,6 +31,7 @@ export default function Observation() {
   const tierStats = useMemo(() => tierStatsBySquad(data, from, to), [data, from, to]);
   const reschedules = useMemo(() => rescheduleStats(data, from, to), [data, from, to]);
   const minors = useMemo(() => repeatedMinors(data, from, to), [data, from, to]);
+  const onlineStats = useMemo(() => onlineHandlingStats(data, from, to), [data, from, to]);
   const memberName = (id: string) => data.members.find((m) => m.id === id)?.name ?? id;
 
   const avgLargeShare = tierStats.length
@@ -42,7 +47,7 @@ export default function Observation() {
       </PageHeader>
 
       <Info>
-        架构师按月跟踪四项指标,作为转正式版的修订输入:大档占比、重排期次数、小问题重复未改进、各端定档尺度一致性。
+        架构师按月跟踪五项指标,作为转正式版的修订输入:大档占比、重排期次数、小问题重复未改进、各端定档尺度一致性、线上处理条数/人(防"抢答刷分")。
       </Info>
 
       <div className="grid grid-cols-2 gap-4">
@@ -91,7 +96,7 @@ export default function Observation() {
                     <span>{s.total} 项</span>
                   </div>
                   <div className="flex h-4 w-full overflow-hidden rounded-full bg-slate-100">
-                    {(['small', 'medium', 'large', 'xlarge'] as Tier[]).map((t) =>
+                    {BAR_TIERS.map((t) =>
                       s.counts[t] > 0 ? (
                         <div
                           key={t}
@@ -104,8 +109,8 @@ export default function Observation() {
                   </div>
                 </div>
               ))}
-              <div className="flex gap-3 pt-1 text-xs text-slate-500">
-                {(['small', 'medium', 'large', 'xlarge'] as Tier[]).map((t) => (
+              <div className="flex flex-wrap gap-3 pt-1 text-xs text-slate-500">
+                {BAR_TIERS.map((t) => (
                   <span key={t} className="flex items-center gap-1">
                     <span className={`inline-block h-2.5 w-2.5 rounded-sm ${TIER_COLORS[t]}`} />
                     {TIER_LABEL[t]}
@@ -157,6 +162,35 @@ export default function Observation() {
                       ) : (
                         <Badge color="amber">尚无规范,优先补充流程</Badge>
                       )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+
+        <Card title="指标五:线上处理条数/人(防抢答刷分)">
+          {onlineStats.length === 0 ? (
+            <EmptyHint text="区间内无线上问题处理记录" />
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-400">
+                  <th className="py-2 pr-3">姓名</th>
+                  <th className="py-2 pr-3 text-right">条数</th>
+                  <th className="py-2 pr-3 text-right">合计实得</th>
+                  <th className="py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {onlineStats.map((s) => (
+                  <tr key={s.memberId} className="border-b border-slate-50">
+                    <td className="py-2 pr-3 font-medium">{memberName(s.memberId)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{s.count}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{s.points}</td>
+                    <td className="py-2 text-right">
+                      {s.count >= 8 && <Badge color="amber">条数偏多,留意是否抢答</Badge>}
                     </td>
                   </tr>
                 ))}

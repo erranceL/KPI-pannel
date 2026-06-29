@@ -5,7 +5,7 @@ import { Badge, Card, ConfirmDialog, EmptyHint, Info, MonthStepper, PageHeader, 
 import { addMonths, currentMonth, round1, tenureMonths, todayISO, totalsInRange } from '../lib/rules';
 import { canArchive, isManager, useCurrentMember, useStore } from '../store';
 
-type ViewMode = 'detail' | 'anonymous' | 'range';
+type ViewMode = 'detail' | 'range';
 type Period = 'month' | 'quarter' | 'year';
 
 /** 周期对应的月份区间与展示标签(anchor 为 YYYY-MM) */
@@ -28,7 +28,7 @@ export default function MonthlyBoard() {
   const [month, setMonth] = useState(currentMonth());
   const [period, setPeriod] = useState<Period>('month');
   const manager = isManager(me);
-  const [mode, setMode] = useState<ViewMode>(manager ? 'detail' : 'anonymous');
+  const [mode, setMode] = useState<ViewMode>(manager ? 'detail' : 'range');
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   const { from, to, label, months } = periodInfo(period, month);
@@ -37,7 +37,7 @@ export default function MonthlyBoard() {
   const memberOf = (id: string) => data.members.find((m) => m.id === id);
 
   const summary = useMemo(() => {
-    const positive = round1(totals.reduce((a, t) => a + t.positive + t.ops, 0));
+    const positive = round1(totals.reduce((a, t) => a + t.positive + t.ops + t.leadBonus, 0));
     const deduction = round1(totals.reduce((a, t) => a + t.deduction + t.leadLiability, 0));
     const periodScores = data.scores.filter((s) => s.date >= from && s.date <= to && s.tier !== 'ops');
     const pendingXl = periodScores.filter((s) => s.tier === 'xlarge' && !s.xlConfirmedBy).length;
@@ -46,7 +46,6 @@ export default function MonthlyBoard() {
 
   const modes: { key: ViewMode; label: string; allowed: boolean }[] = [
     { key: 'detail', label: '实名明细', allowed: manager },
-    { key: 'anonymous', label: '匿名排名', allowed: true },
     { key: 'range', label: '总分区间', allowed: true },
   ];
 
@@ -150,8 +149,8 @@ export default function MonthlyBoard() {
 
       <Info>
         {period === 'month'
-          ? '月度总分 = 正分 + 运维杂项 − 扣分 − Lead 连带;公示期 2 个工作日,异议找架构师仲裁(8.1);试运行期间全员仅公示区间或匿名排名(8.2)。'
-          : `${period === 'quarter' ? '季度' : '年度'}视图为该周期内各月记录的累加,口径与月度一致;归档、公示与申诉仍按月进行(8.1)。`}
+          ? '月度总分 = 正分 + 运维杂项 + 管理加成 − 扣分 − Lead 连带;公示期 2 个工作日,异议找架构师仲裁(8.1);成员侧仅公示总分区间(8.2)。'
+          : `${period === 'quarter' ? '季度' : '年度'}视图为该周期内各月记录的累加,口径与月度一致;管理加成每月封顶后再相加;归档、公示与申诉仍按月进行(8.1)。`}
       </Info>
 
       {totals.length === 0 ? (
@@ -185,15 +184,16 @@ export default function MonthlyBoard() {
           </div>
         </Card>
       ) : (
-        <Card title={`${label} ${mode === 'detail' ? '实名明细' : '匿名排名'}`}>
+        <Card title={`${label} 实名明细`}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs text-slate-400">
                   <th className="py-2 pr-3 font-medium">#</th>
-                  <th className="py-2 pr-3 font-medium">{mode === 'detail' ? '姓名 / 端' : '成员'}</th>
+                  <th className="py-2 pr-3 font-medium">姓名 / 端</th>
                   <th className="py-2 pr-3 text-right font-medium">正分</th>
                   <th className="py-2 pr-3 text-right font-medium">运维</th>
+                  <th className="py-2 pr-3 text-right font-medium">管理加成</th>
                   <th className="py-2 pr-3 text-right font-medium">扣分</th>
                   <th className="py-2 pr-3 text-right font-medium">连带</th>
                   <th className="py-2 pr-3 text-right font-medium">总分</th>
@@ -205,21 +205,21 @@ export default function MonthlyBoard() {
                   const m = memberOf(t.memberId);
                   const isMe = me?.id === t.memberId;
                   const newbie = m && tenureMonths(m.joinDate, todayISO()) < 3;
-                  const show = mode === 'detail' || isMe;
                   return (
                     <tr key={t.memberId} className={`border-b border-slate-50 ${isMe ? 'bg-indigo-50/50' : ''}`}>
                       <td className="py-2.5 pr-3 tabular-nums text-slate-400">{newbie ? '—' : idx + 1}</td>
                       <td className="py-2.5 pr-3 font-medium">
-                        {show ? `${m?.name}${mode !== 'detail' ? '(我)' : ''}` : `成员 ${String.fromCharCode(65 + idx)}`}
-                        {mode === 'detail' && <span className="ml-1 text-xs text-slate-400">{m?.squad}</span>}
+                        {m?.name}
+                        <span className="ml-1 text-xs text-slate-400">{m?.squad}</span>
                         {newbie && <Badge color="green">保护期不参与排名</Badge>}
                       </td>
                       <td className="py-2.5 pr-3 text-right tabular-nums">{t.positive}</td>
                       <td className="py-2.5 pr-3 text-right tabular-nums text-slate-500">{t.ops}</td>
+                      <td className="py-2.5 pr-3 text-right tabular-nums text-emerald-600">{t.leadBonus ? `+${t.leadBonus}` : '—'}</td>
                       <td className="py-2.5 pr-3 text-right tabular-nums text-red-600">{t.deduction ? `−${t.deduction}` : '0'}</td>
                       <td className="py-2.5 pr-3 text-right tabular-nums text-red-400">{t.leadLiability ? `−${t.leadLiability}` : '—'}</td>
                       <td className="py-2.5 pr-3 text-right text-base font-bold tabular-nums">{t.total}</td>
-                      <td className="py-2.5 text-xs text-slate-400">{show && t.deduction > 0 ? '扣分明细见问题与事故台账' : ''}</td>
+                      <td className="py-2.5 text-xs text-slate-400">{t.deduction > 0 ? '扣分明细见问题与事故台账' : ''}</td>
                     </tr>
                   );
                 })}

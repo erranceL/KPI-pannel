@@ -1,18 +1,26 @@
 import { useMemo, useState } from 'react';
 import { Badge, Card, EmptyHint, MonthStepper, PageHeader } from '../components/ui';
 import {
-  DELIVERY_LABEL,
   INCIDENT_LABEL,
   LIABILITY_LABEL,
   TIER_LABEL,
   addMonths,
   computeDeduction,
   currentMonth,
+  deliveryFactor,
   monthOf,
   monthlyTotals,
   scoreFinal,
 } from '../lib/rules';
+import type { ScoreEntry } from '../lib/types';
 import { useCurrentMember, useStore } from '../store';
+
+function deliveryText(s: ScoreEntry): string {
+  if (s.tier === 'online' || s.tier === 'ops') return '';
+  if (s.delivery === 'zero') return '未交付';
+  const f = deliveryFactor(s);
+  return f >= 1 ? '全额' : `${Math.round(f * 100)}%`;
+}
 
 export default function My() {
   const { data } = useStore();
@@ -47,6 +55,7 @@ export default function My() {
   if (!me) return null;
 
   const deductionTotal = (myTotal?.deduction ?? 0) + (myTotal?.leadLiability ?? 0);
+  const leadBonus = myTotal?.leadBonus ?? 0;
 
   return (
     <div className="space-y-4">
@@ -54,13 +63,14 @@ export default function My() {
         <MonthStepper value={month} onChange={setMonth} />
       </PageHeader>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className={`grid gap-3 ${leadBonus > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
         <div className="rounded-xl bg-indigo-600 p-5 text-white">
           <div className="text-xs text-indigo-200">本月总分</div>
           <div className="mt-1 text-3xl font-bold tabular-nums">{myTotal?.total ?? 0}</div>
         </div>
         <StatCard label="事项正分" value={myTotal?.positive ?? 0} />
         <StatCard label="运维杂项" value={myTotal?.ops ?? 0} />
+        {leadBonus > 0 && <StatCard label="管理加成(7.3)" value={leadBonus} />}
         <StatCard label="扣分" value={deductionTotal > 0 ? -deductionTotal : 0} red={deductionTotal > 0} />
       </div>
 
@@ -95,9 +105,7 @@ export default function My() {
                   <td className="py-2.5 pr-3 whitespace-nowrap">
                     <Badge>{TIER_LABEL[s.tier]} {s.points}</Badge>
                   </td>
-                  <td className="py-2.5 pr-3 whitespace-nowrap text-xs text-slate-400">
-                    {s.tier === 'ops' ? '' : DELIVERY_LABEL[s.delivery].split('(')[0]}
-                  </td>
+                  <td className="py-2.5 pr-3 whitespace-nowrap text-xs text-slate-400">{deliveryText(s)}</td>
                   <td className="py-2.5 text-right font-semibold tabular-nums">{scoreFinal(s)}</td>
                 </tr>
               ))}

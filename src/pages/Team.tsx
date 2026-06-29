@@ -66,7 +66,7 @@ export default function Team() {
 
       {unmapped > 0 && (
         <Warn>
-          有 {unmapped} 名成员职级未映射:全员职级映射完成并经本人确认前,Token 职级系数一律按 1.0 执行(9.3)。
+          有 {unmapped} 名成员职级未映射:建议尽快完成全员职级映射并经本人确认,作为后续薪酬/激励的参考口径。
         </Warn>
       )}
 

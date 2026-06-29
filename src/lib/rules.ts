@@ -1,4 +1,4 @@
-// 规则计算器 —— 全部为纯函数,口径与《研发绩效积分办法 v2.2(试行)》一致。
+// 规则计算器 —— 全部为纯函数,口径与《研发绩效积分办法 v2.3(试行)》一致。
 // 未来后端落地时,本文件即计算口径的单一参照。
 
 import type {
@@ -7,11 +7,11 @@ import type {
   Grade,
   IncidentEntry,
   IncidentLevel,
-  Level,
   Liability,
   Member,
   Reporting,
   ScoreEntry,
+  Squad,
   Tier,
 } from './types';
 
@@ -22,31 +22,34 @@ export const TIER_LABEL: Record<Tier, string> = {
   medium: '中',
   large: '大',
   xlarge: '特大',
+  online: '线上问题处理',
   ops: '运维杂项',
 };
 
+/** 各档分值区间 [下限, 上限](3.1),录入时区间内取整 */
+export const TIER_RANGE: Record<Tier, [number, number]> = {
+  small: [1, 4],
+  medium: [5, 9],
+  large: [10, 24],
+  xlarge: [25, 50],
+  online: [3, 30],
+  ops: [0, 10],
+};
+
+/** 各档默认值:取区间中位;线上默认为及时响应基础分 3 */
 export const TIER_DEFAULT_POINTS: Record<Tier, number> = {
-  small: 5,
-  medium: 10,
-  large: 25,
-  xlarge: 50,
+  small: 3,
+  medium: 7,
+  large: 17,
+  xlarge: 35,
+  online: 3,
   ops: 0,
 };
 
-/** 大档允许 25 或 30(30 须备注理由),运维杂项 0–10,其余固定 */
+/** 分值须落在该档区间内(3.1) */
 export function validTierPoints(tier: Tier, points: number): boolean {
-  switch (tier) {
-    case 'small':
-      return points === 5;
-    case 'medium':
-      return points === 10;
-    case 'large':
-      return points === 25 || points === 30;
-    case 'xlarge':
-      return points === 50;
-    case 'ops':
-      return points >= 0 && points <= 10;
-  }
+  const [min, max] = TIER_RANGE[tier];
+  return Number.isInteger(points) && points >= min && points <= max;
 }
 
 // ---------- 3.4 交付系数 ----------
@@ -59,17 +62,38 @@ export const DELIVERY_LABEL: Record<Delivery, string> = {
   zero: '0(未交付)',
 };
 
+/** 延期惩罚系数(3.4):工期单位=工作日 */
+export const DELAY_PENALTY = 1.2;
+
+/**
+ * 交付系数(3.4):
+ * - 线上问题处理 / 运维杂项:不适用,系数 1
+ * - 未交付(delivery='zero'):0
+ * - 原计划工期 ≥ 3 天:max(0, 1 − 延期天数 × 1.2 / 工期)
+ * - 工期 < 3 天或缺省:全额(1)/未交付(0)二选一,不再用减半
+ */
+export function deliveryFactor(e: ScoreEntry): number {
+  if (e.tier === 'online' || e.tier === 'ops') return 1;
+  if (e.delivery === 'zero') return 0;
+  if (e.plannedDays && e.plannedDays >= 3) {
+    return Math.max(0, round1(1 - ((e.delayDays ?? 0) * DELAY_PENALTY) / e.plannedDays));
+  }
+  // 工期 < 3 天或老数据:half 也按全额处理(短任务只看交付与否)
+  return e.delivery === 'half' ? 0.5 : 1;
+}
+
 /** 单条积分记录的实际得分(3.4 / 3.8) */
 export function scoreFinal(e: ScoreEntry): number {
   if (e.selfFix) return 0; // 修复本人 90 天内引入的问题不计正分
-  return round1(e.points * DELIVERY_FACTOR[e.delivery]);
+  return round1(e.points * deliveryFactor(e));
 }
 
 // ---------- 4.2 / 4.3 扣分 ----------
 
-export const INCIDENT_BASE: Record<IncidentLevel, number> = { P0: 150, P1: 50, P2: 15, minor: 0 };
+export const INCIDENT_BASE: Record<IncidentLevel, number> = { asset: 300, P0: 150, P1: 50, P2: 15, minor: 0 };
 
 export const INCIDENT_LABEL: Record<IncidentLevel, string> = {
+  asset: '资损级',
   P0: 'P0',
   P1: 'P1',
   P2: 'P2',
@@ -204,16 +228,18 @@ export function computeDeduction(incident: IncidentEntry, member: Member, scores
   const raw = round1(base * liabilityFactor * reportingFactor);
 
   const capInfo = deductionCap(member, scores, incident.date);
+  // 红线与资损级不适用封顶(4.1 / 4.2)
+  const capExempt = incident.redline || incident.level === 'asset';
   let final = raw;
   let capApplied = false;
-  if (!incident.redline && raw > capInfo.cap) {
+  if (!capExempt && raw > capInfo.cap) {
     final = capInfo.cap;
     capApplied = true;
   }
 
   let newbieHalved = false;
   const tenure = tenureMonths(member.joinDate, incident.date);
-  if (!incident.redline && tenure < 3) {
+  if (!capExempt && tenure < 3) {
     final = round1(final * 0.5);
     newbieHalved = true;
   }
@@ -259,18 +285,75 @@ export interface MemberTotals {
   memberId: string;
   positive: number;
   ops: number;
+  /** Leader 管理加成(7.3):被管理任务实得分的 10%,每月封顶 15 */
+  leadBonus: number;
   deduction: number;
   leadLiability: number;
   total: number;
 }
 
+/** Leader 管理加成比例与每月封顶(7.3),集中于此便于调整 */
+export const LEAD_BONUS_RATE = 0.1;
+export const LEAD_BONUS_CAP = 15;
+
+/** 某端管理加成的承接人:本端 Lead → 架构师 →(架构端)CTO */
+export function squadManager(data: AppData, squad: Squad): Member | undefined {
+  const lead = data.members.find((m) => m.active && m.squad === squad && m.role === 'lead');
+  if (lead) return lead;
+  if (squad === '架构') return data.members.find((m) => m.active && m.role === 'cto');
+  const arch = data.members.find((m) => m.active && m.role === 'architect');
+  return arch ?? data.members.find((m) => m.active && m.role === 'cto');
+}
+
+/** 闭区间 [from,to] 覆盖的自然月列表(YYYY-MM) */
+function monthsBetween(from: string, to: string): string[] {
+  const months: string[] = [];
+  let m = from.slice(0, 7);
+  const end = to.slice(0, 7);
+  let guard = 0;
+  while (m <= end && guard++ < 600) {
+    months.push(m);
+    m = addMonths(m, 1);
+  }
+  return months;
+}
+
+/**
+ * Leader 管理加成(7.3):按月计算,每月每位承接人封顶 15,再按区间相加。
+ * 不含承接人本人的任务;只计正分任务(非 ops、实得 > 0)。
+ */
+export function leadBonusInRange(data: AppData, from: string, to: string): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const month of monthsBetween(from, to)) {
+    const mFrom = `${month}-01`;
+    const mTo = `${month}-31`;
+    const perRecipient = new Map<string, number>();
+    for (const s of data.scores) {
+      if (s.tier === 'ops' || s.date < mFrom || s.date > mTo) continue;
+      const final = scoreFinal(s);
+      if (final <= 0) continue;
+      const member = data.members.find((x) => x.id === s.memberId);
+      if (!member) continue;
+      const mgr = squadManager(data, member.squad);
+      if (!mgr || mgr.id === s.memberId) continue;
+      perRecipient.set(mgr.id, (perRecipient.get(mgr.id) ?? 0) + final * LEAD_BONUS_RATE);
+    }
+    for (const [id, amt] of perRecipient) {
+      result.set(id, round1((result.get(id) ?? 0) + Math.min(amt, LEAD_BONUS_CAP)));
+    }
+  }
+  return result;
+}
+
 export function totalsInRange(data: AppData, from: string, to: string): MemberTotals[] {
+  const bonusMap = leadBonusInRange(data, from, to);
   return data.members
     .filter((m) => m.active)
     .map((m) => {
       const myScores = data.scores.filter((s) => s.memberId === m.id && s.date >= from && s.date <= to);
       const ops = round1(myScores.filter((s) => s.tier === 'ops').reduce((a, s) => a + scoreFinal(s), 0));
       const positive = round1(myScores.filter((s) => s.tier !== 'ops').reduce((a, s) => a + scoreFinal(s), 0));
+      const leadBonus = round1(bonusMap.get(m.id) ?? 0);
 
       let deduction = 0;
       let leadLiability = 0;
@@ -289,9 +372,10 @@ export function totalsInRange(data: AppData, from: string, to: string): MemberTo
         memberId: m.id,
         positive,
         ops,
+        leadBonus,
         deduction,
         leadLiability,
-        total: round1(positive + ops - deduction - leadLiability),
+        total: round1(positive + ops + leadBonus - deduction - leadLiability),
       };
     });
 }
@@ -308,7 +392,8 @@ export interface AnnualTotals extends MemberTotals {
 
 export function annualTotals(data: AppData, year: string): AnnualTotals[] {
   return totalsInRange(data, `${year}-01-01`, `${year}-12-31`).map((t) => {
-    const allPositive = round1(t.positive + t.ops);
+    // 管理加成计入年度正分(进年终奖分子与年度有效积分)
+    const allPositive = round1(t.positive + t.ops + t.leadBonus);
     return {
       ...t,
       allPositive,
@@ -348,7 +433,8 @@ export function gradeHints(data: AppData, year: string): GradeHint[] {
     const rank = sorted.findIndex((s) => s.memberId === t.memberId) + 1;
     const percentile = sorted.length > 1 ? (rank - 1) / (sorted.length - 1) : 0;
     const mine = yearIncidents.filter((i) => i.memberId === t.memberId);
-    const p0Primary = mine.some((i) => i.level === 'P0' && i.liability === 'primary');
+    // 资损级视同 P0 主责处理(封顶 B)
+    const p0Primary = mine.some((i) => (i.level === 'P0' || i.level === 'asset') && i.liability === 'primary');
     const p1Primary = mine.some((i) => i.level === 'P1' && i.liability === 'primary');
     const redline = mine.some((i) => i.redline);
     const belowHalfMedian = t.effective < median * 0.5;
@@ -427,44 +513,6 @@ export function simulateBonus(data: AppData, year: string, budget: number, coeff
   };
 }
 
-// ---------- 9.3 Token 模拟 ----------
-
-export const LEVEL_FACTOR: Record<Level, number> = {
-  L1: 0.8,
-  L2: 1.0,
-  L3: 1.2,
-  L4: 1.5,
-  L5: 1.8,
-  unmapped: 1.0,
-};
-
-export function tokenQuota(base: number, level: Level, grade: Grade, longTerm: number, risk: number): number {
-  return round1(base * LEVEL_FACTOR[level] * GRADE_FACTOR[grade] * longTerm * risk);
-}
-
-export interface RiskSuggestion {
-  value: number;
-  reason: string;
-}
-
-/** 按年度事故记录建议风险调整系数(9.3) */
-export function suggestRisk(data: AppData, memberId: string, year: string): RiskSuggestion {
-  const mine = data.incidents.filter((i) => i.memberId === memberId && i.date.startsWith(year));
-  if (mine.some((i) => i.redline && (i.reporting === 'concealed' || i.level === 'P0'))) {
-    return { value: 0, reason: '红线成立且涉故意/资产类,系数 0' };
-  }
-  if (mine.some((i) => i.redline)) {
-    return { value: 0.3, reason: '流程类红线成立,建议 0–0.5' };
-  }
-  if (mine.some((i) => i.level === 'P0' && i.liability === 'primary')) {
-    return { value: 0.65, reason: 'P0 主责,建议 0.5–0.8' };
-  }
-  if (mine.some((i) => i.level === 'P1' && i.liability === 'primary')) {
-    return { value: 0.85, reason: 'P1 主责,建议 0.8–0.9' };
-  }
-  return { value: 1, reason: '无 P0/P1 主责、无红线' };
-}
-
 // ---------- 10.1 试运行观察指标 ----------
 
 export interface SquadTierStats {
@@ -487,7 +535,7 @@ export function tierStatsBySquad(data: AppData, fromMonth: string, toMonth: stri
     if (!st) {
       st = {
         squad: member.squad,
-        counts: { small: 0, medium: 0, large: 0, xlarge: 0, ops: 0 },
+        counts: { small: 0, medium: 0, large: 0, xlarge: 0, online: 0, ops: 0 },
         total: 0,
         largeShare: 0,
         largePointShare: 0,
@@ -516,6 +564,27 @@ export function tierStatsBySquad(data: AppData, fromMonth: string, toMonth: stri
     st.largePointShare = allPts ? largePts / allPts : 0;
   }
   return [...stats.values()].sort((a, b) => a.squad.localeCompare(b.squad));
+}
+
+/** 线上问题处理条数/人(10.1 监控),用于观察是否出现"抢答刷分" */
+export interface OnlineHandlingStat {
+  memberId: string;
+  count: number;
+  points: number;
+}
+
+export function onlineHandlingStats(data: AppData, fromMonth: string, toMonth: string): OnlineHandlingStat[] {
+  const from = `${fromMonth}-01`;
+  const to = `${toMonth}-31`;
+  const map = new Map<string, OnlineHandlingStat>();
+  for (const s of data.scores) {
+    if (s.tier !== 'online' || s.date < from || s.date > to) continue;
+    const cur = map.get(s.memberId) ?? { memberId: s.memberId, count: 0, points: 0 };
+    cur.count += 1;
+    cur.points = round1(cur.points + scoreFinal(s));
+    map.set(s.memberId, cur);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count);
 }
 
 export interface RescheduleStat {

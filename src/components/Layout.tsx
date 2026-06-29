@@ -21,7 +21,7 @@ const NAV = [
   { to: '/annual', label: '年度视图', icon: Trophy, roles: ['architect', 'cto'] },
   { to: '/observe', label: '试运行观察', icon: Eye, roles: ['architect', 'cto'] },
   { to: '/team', label: '团队设置', icon: Users, roles: ['architect', 'cto'] },
-  { to: '/policy', label: '制度 v2.2', icon: BookOpen, roles: ['member', 'lead', 'architect', 'cto'] },
+  { to: '/policy', label: '制度 v2.3', icon: BookOpen, roles: ['member', 'lead', 'architect', 'cto'] },
 ] as const;
 
 export default function Layout() {
@@ -34,7 +34,7 @@ export default function Layout() {
       <aside className="fixed inset-y-0 left-0 flex w-52 flex-col border-r border-slate-200 bg-white">
         <div className="px-5 py-5">
           <div className="text-lg font-bold text-indigo-700">KPI 面板</div>
-          <div className="mt-0.5 text-xs text-slate-400">研发绩效积分 · v2.2 试行</div>
+          <div className="mt-0.5 text-xs text-slate-400">研发绩效积分 · v2.3 试行</div>
         </div>
         <nav className="flex-1 space-y-0.5 px-3">
           {NAV.filter((n) => (n.roles as readonly string[]).includes(role)).map((n) => (

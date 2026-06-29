@@ -4,12 +4,12 @@ import policyMd from '../assets/policy.md?raw';
 import { PageHeader } from '../components/ui';
 
 const QUICK_CARDS = [
-  { n: 1, title: '活有四档', text: '小 5 / 中 10 / 大 25(接近 2 周可记 30,需备注理由)/ 特大 50,Lead 分活时定档' },
-  { n: 2, title: '交付三条', text: '按期全额;延期没预警减半;没交付 0 分。要延期,提前一天说清原因、剩余量、新时间;同一件事最多重排 2 次' },
-  { n: 3, title: '主动报告减半', text: '出问题主动报告,扣分减半;隐瞒或拖到影响扩大,加半还触红线' },
-  { n: 4, title: '高危操作', text: '合约/资金/生产操作:Review + 审批 + 回滚预案 + 双人复核,信息真实,出事最多算次责' },
-  { n: 5, title: '五条红线别碰', text: '私钥、未审批动资产、泄密、隐瞒事故、伪造记录' },
-  { n: 6, title: '有异议就申诉', text: '公示 2 天内找架构师,搞不定升级 CTO' },
+  { n: 1, title: '活按区间定分', text: '小 1–4 / 中 5–9 / 大 10–24 / 特大 25–50;线上问题处理 3–30;Lead 分活时在区间内取整数定分' },
+  { n: 2, title: '交付看工期', text: '工期 ≥3 天:实得 = max(0, 1 − 延期天数 ×1.2 / 工期) × 分值;短活只看交付与否;未交付 0 分。延期提前一天预警不算' },
+  { n: 3, title: '线上问题处理', text: '及时响应基础 3 分;主动发现、下班/周日支援、给对分析推动解决取高位;自己 bug 不计正分,按严重度分级' },
+  { n: 4, title: '事故与资损', text: '扣分 = 档位 × 责任 × 报告;新增资损级 −300,不封顶、不享高危保护、默认红线、CTO 认定' },
+  { n: 5, title: 'Leader 管理加成', text: '所带任务实得分的 10% 计入 Lead 正分,每月封顶 15,计入月度/年度与年终奖分子' },
+  { n: 6, title: '红线与申诉', text: '私钥、未审批动资产、泄密、隐瞒事故、伪造记录;有异议公示 2 天内找架构师,搞不定升级 CTO' },
 ];
 
 export default function Policy() {
@@ -42,7 +42,7 @@ export default function Policy() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="研发绩效积分办法 v2.2(试行)" />
+      <PageHeader title="研发绩效积分办法 v2.3(试行)" />
 
       <div className="grid grid-cols-3 gap-3">
         {QUICK_CARDS.map((c) => (
