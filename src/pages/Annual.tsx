@@ -91,7 +91,7 @@ export default function Annual() {
       {tab === 'grade' && (
         <Card title="年度有效积分与评级(9.1)">
           <Info>
-            年度有效积分 = max(正分(含管理加成) − 扣分, 0);积分排名是必要条件而非充分条件,评级由评级会确定;资损违规级/P0 主责封顶 B,红线暂缓评定。
+            年度有效积分 = max(正分(含管理加成) − 扣分, 0);积分排名是必要条件而非充分条件,评级由评级会确定;资损违规级/P0 主责封顶 B,红线暂缓评定。评级与奖金还会结合软性评定项(自驱力/责任心/有始有终)做弹性调整(9.4)。
           </Info>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
@@ -132,7 +132,7 @@ export default function Annual() {
                       <td className="py-2.5 pr-3 text-right font-bold tabular-nums">{t.effective}</td>
                       <td className="py-2.5 pr-3 space-x-1">
                         {h?.redline && <Badge color="red">红线·暂缓评定</Badge>}
-                        {h?.p0Primary && <Badge color="amber">P0/资损主责·封顶 B</Badge>}
+                        {h?.p0Primary && <Badge color="amber">P0/资损违规主责·封顶 B</Badge>}
                         {h?.p1Primary && !h.p0Primary && <Badge color="amber">P1 主责</Badge>}
                         {h?.belowHalfMedian && <Badge>低于中位数 50%</Badge>}
                       </td>

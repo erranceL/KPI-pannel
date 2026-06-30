@@ -65,7 +65,7 @@ export interface AssetLossEntry {
   recovered?: number;
   /** 是否按既定 Review/审批/回滚流程执行 */
   processFollowed?: boolean;
-  /** 系统按当前参考线给出的建议,最终事故级别仍由人决定 */
+  /** 未按流程资损时的系统建议;按流程资损不自动建议级别 */
   suggestedLevel?: IncidentLevel;
   note?: string;
 }
@@ -87,7 +87,7 @@ export interface IncidentEntry {
   leadMemberId?: string;
   /** 4.4:同类小问题是否已有明确规范/检查清单 */
   hasChecklist?: boolean;
-  /** 资损单列项:只记录事实与系统建议,不自动决定最终事故档位 */
+  /** 资损单列项:记录事实;最终事故档位由管理层评定 */
   assetLoss?: AssetLossEntry;
   note?: string;
   decidedBy: string; // memberId,P0/P1 须 CTO,P2 可架构师(4.5)
@@ -136,9 +136,6 @@ export interface LeaderRuleConfig {
 }
 
 export interface AssetLossRuleConfig {
-  observeMax: number;
-  p2Max: number;
-  p1Max: number;
   currency: string;
 }
 

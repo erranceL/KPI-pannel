@@ -125,7 +125,9 @@ export default function IncidentLedger() {
                               净损失 {suggestion.netLoss} {config.assetLoss.currency}
                             </div>
                             <div>
-                              {i.assetLoss?.processFollowed === false ? '未按流程' : '按流程'} · 建议 {INCIDENT_LABEL[suggestion.suggestedLevel]}
+                              {i.assetLoss?.processFollowed === false && suggestion.suggestedLevel
+                                ? `未按流程 · 建议 ${INCIDENT_LABEL[suggestion.suggestedLevel]}`
+                                : '按流程 · 人工评定'}
                             </div>
                           </div>
                         ) : (
@@ -254,7 +256,7 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
     decidedBy: entry?.decidedBy ?? me?.id ?? '',
   };
   const suggestion = assetLossSuggestion(draft);
-  if (draft.assetLoss && suggestion) draft.assetLoss.suggestedLevel = suggestion.suggestedLevel;
+  if (draft.assetLoss) draft.assetLoss.suggestedLevel = suggestion?.suggestedLevel;
   const calc = target ? computeDeduction(draft, target, data.scores) : null;
 
   const repeats = category ? minorRepeatCount(data.incidents, memberId, category, date, entry?.id) : 0;
@@ -366,7 +368,8 @@ function IncidentModal({ entry, onClose }: { entry?: IncidentEntry; onClose: () 
                 </Field>
                 {suggestion && (
                   <Info>
-                    系统建议:{INCIDENT_LABEL[suggestion.suggestedLevel]} · {suggestion.text};最终事故级别仍由管理层人工选择。
+                    {suggestion.suggestedLevel ? `系统建议:${INCIDENT_LABEL[suggestion.suggestedLevel]} · ` : ''}
+                    {suggestion.text};最终事故级别仍由管理层人工选择。
                   </Info>
                 )}
               </div>

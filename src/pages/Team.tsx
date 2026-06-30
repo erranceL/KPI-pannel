@@ -334,17 +334,11 @@ function RuleSettings({
           </div>
 
           <div>
-            <div className="mb-2 text-xs font-semibold text-slate-500">资损参考线</div>
-            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
-              <Field label="观察上限">
-                {numInput(config.assetLoss.observeMax, (n) => update((next) => (next.assetLoss.observeMax = n)), 'w-full')}
-              </Field>
-              <Field label="P2 上限">
-                {numInput(config.assetLoss.p2Max, (n) => update((next) => (next.assetLoss.p2Max = n)), 'w-full')}
-              </Field>
-              <Field label="P1 上限">
-                {numInput(config.assetLoss.p1Max, (n) => update((next) => (next.assetLoss.p1Max = n)), 'w-full')}
-              </Field>
+            <div className="mb-2 text-xs font-semibold text-slate-500">资损记录</div>
+            <div className="space-y-3 rounded-xl bg-slate-50 p-3">
+              <Info>
+                按流程导致资损不按金额自动定级,只记录净损失与事实;最终级别由管理者和 CTO 人工评定。未按流程导致资损仍可认定为资损违规级。
+              </Info>
               <Field label="币种">
                 <input
                   className={inputCls}

@@ -64,7 +64,7 @@ export function seedData(): AppData {
     medium: ['活动页改版', '订单查询接口开发', '行情模块联调', '回归测试一轮', '告警规则梳理'],
     large: ['提现限额逻辑改造', '撮合服务性能优化', '资金对账模块重构', '发布流水线自动化'],
     xlarge: ['跨链桥结算链路重构', '核心风控引擎升级'],
-    online: ['凌晨主动发现并修复支付回调异常', '周日支援排查行情卡顿', '定位并推动修复提现超时', '处理告警风暴并止损'],
+    online: ['凌晨处理支付回调异常', '周日支援排查行情卡顿', '定位并推动修复提现超时', '处理告警风暴并止损'],
     ops: ['当月发布/值班杂项'],
   };
 
@@ -138,7 +138,7 @@ export function seedData(): AppData {
           delivery: 'full',
           tierReason: undefined,
           reschedules: 0,
-          note: '主动发现/非工作时间支援,区间取高位',
+          note: '非工作时间支援/分析准确并推动解决,区间取高位',
           recordedBy: leadOf[m.squad],
         });
       }
@@ -256,10 +256,9 @@ export function seedData(): AppData {
         amount: 180,
         recovered: 20,
         processFollowed: true,
-        suggestedLevel: 'P2',
         note: '流程完整,主动报告并追回部分损失',
       },
-      note: '按流程资损单列记录,系统建议 P2,最终级别由 CTO 评定',
+      note: '按流程资损单列记录,最终级别由管理者和 CTO 结合事实评定',
     },
   ];
 

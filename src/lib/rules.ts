@@ -3,7 +3,6 @@
 
 import type {
   AppData,
-  Delivery,
   Grade,
   IncidentEntry,
   IncidentLevel,
@@ -54,9 +53,6 @@ export const DEFAULT_KPI_CONFIG: KpiRuleConfig = {
     monthlyCap: 15,
   },
   assetLoss: {
-    observeMax: 100,
-    p2Max: 500,
-    p1Max: 1000,
     currency: 'USDT',
   },
 };
@@ -95,33 +91,10 @@ export function getActiveConfig(): KpiRuleConfig {
   return activeConfig;
 }
 
-/** 各档分值区间 [下限, 上限](3.1),录入时区间内取整 */
-export const TIER_RANGE: Record<Tier, [number, number]> = {
-  small: [DEFAULT_KPI_CONFIG.tiers.small.min, DEFAULT_KPI_CONFIG.tiers.small.max],
-  medium: [DEFAULT_KPI_CONFIG.tiers.medium.min, DEFAULT_KPI_CONFIG.tiers.medium.max],
-  large: [DEFAULT_KPI_CONFIG.tiers.large.min, DEFAULT_KPI_CONFIG.tiers.large.max],
-  xlarge: [DEFAULT_KPI_CONFIG.tiers.xlarge.min, DEFAULT_KPI_CONFIG.tiers.xlarge.max],
-  online: [DEFAULT_KPI_CONFIG.tiers.online.min, DEFAULT_KPI_CONFIG.tiers.online.max],
-  ops: [DEFAULT_KPI_CONFIG.tiers.ops.min, DEFAULT_KPI_CONFIG.tiers.ops.max],
-};
-
-/** 各档默认值:取区间中位;线上默认为及时响应基础分 3 */
-export const TIER_DEFAULT_POINTS: Record<Tier, number> = {
-  small: DEFAULT_KPI_CONFIG.tiers.small.defaultPoints,
-  medium: DEFAULT_KPI_CONFIG.tiers.medium.defaultPoints,
-  large: DEFAULT_KPI_CONFIG.tiers.large.defaultPoints,
-  xlarge: DEFAULT_KPI_CONFIG.tiers.xlarge.defaultPoints,
-  online: DEFAULT_KPI_CONFIG.tiers.online.defaultPoints,
-  ops: DEFAULT_KPI_CONFIG.tiers.ops.defaultPoints,
-};
-
+/** 当前生效配置下的档位区间 [下限, 上限](3.1),录入时区间内取整 */
 export function tierRange(tier: Tier): [number, number] {
   const cfg = getActiveConfig().tiers[tier];
   return [cfg.min, cfg.max];
-}
-
-export function tierDefaultPoints(tier: Tier): number {
-  return getActiveConfig().tiers[tier].defaultPoints;
 }
 
 /** 分值须落在该档区间内(3.1) */
@@ -131,17 +104,6 @@ export function validTierPoints(tier: Tier, points: number): boolean {
 }
 
 // ---------- 3.4 交付系数 ----------
-
-export const DELIVERY_FACTOR: Record<Delivery, number> = { full: 1, half: 0.5, zero: 0 };
-
-export const DELIVERY_LABEL: Record<Delivery, string> = {
-  full: '全额',
-  half: '减半(延期未预警)',
-  zero: '0(未交付)',
-};
-
-/** 延期惩罚系数(3.4):工期单位=工作日 */
-export const DELAY_PENALTY = DEFAULT_KPI_CONFIG.delivery.delayPenalty;
 
 /**
  * 交付系数(3.4):
@@ -169,8 +131,6 @@ export function scoreFinal(e: ScoreEntry): number {
 
 // ---------- 4.2 / 4.3 扣分 ----------
 
-export const INCIDENT_BASE: Record<IncidentLevel, number> = DEFAULT_KPI_CONFIG.incidents.base;
-
 export const INCIDENT_LABEL: Record<IncidentLevel, string> = {
   asset: '资损违规级',
   P0: 'P0',
@@ -179,19 +139,10 @@ export const INCIDENT_LABEL: Record<IncidentLevel, string> = {
   minor: '小问题',
 };
 
-export const LIABILITY_FACTOR: Record<Liability, number> = DEFAULT_KPI_CONFIG.incidents.liabilityFactor;
-
 export const LIABILITY_LABEL: Record<Liability, string> = {
   primary: '主责',
   secondary: '次责',
   none: '无责',
-};
-
-export const REPORTING_FACTOR: Record<Reporting, number> = {
-  proactive: DEFAULT_KPI_CONFIG.incidents.reportingFactor.proactive,
-  passive: DEFAULT_KPI_CONFIG.incidents.reportingFactor.passive,
-  late: DEFAULT_KPI_CONFIG.incidents.reportingFactor.late,
-  concealed: DEFAULT_KPI_CONFIG.incidents.reportingFactor.concealed,
 };
 
 export const REPORTING_LABEL: Record<Reporting, string> = {
@@ -347,7 +298,7 @@ export function computeDeduction(incident: IncidentEntry, member: Member, scores
 
 export interface AssetLossSuggestion {
   netLoss: number;
-  suggestedLevel: IncidentLevel;
+  suggestedLevel?: IncidentLevel;
   text: string;
 }
 
@@ -359,16 +310,10 @@ export function assetLossSuggestion(incident: Pick<IncidentEntry, 'assetLoss'>):
   if (assetLoss.processFollowed === false) {
     return { netLoss, suggestedLevel: 'asset', text: `未按流程导致资损,建议资损违规级(${getActiveConfig().incidents.base.asset})` };
   }
-  if (netLoss <= cfg.observeMax) {
-    return { netLoss, suggestedLevel: 'minor', text: `净损失 ≤ ${cfg.observeMax} ${cfg.currency},建议小问题/观察` };
-  }
-  if (netLoss <= cfg.p2Max) {
-    return { netLoss, suggestedLevel: 'P2', text: `净损失 ≤ ${cfg.p2Max} ${cfg.currency},建议 P2` };
-  }
-  if (netLoss <= cfg.p1Max) {
-    return { netLoss, suggestedLevel: 'P1', text: `净损失 ≤ ${cfg.p1Max} ${cfg.currency},建议 P1` };
-  }
-  return { netLoss, suggestedLevel: 'P0', text: `净损失 > ${cfg.p1Max} ${cfg.currency},建议 P0` };
+  return {
+    netLoss,
+    text: `按流程导致资损,记录净损失 ${netLoss} ${cfg.currency};最终级别由管理者和 CTO 结合事实评定`,
+  };
 }
 
 // ---------- 4.4 小问题重复判定 ----------
@@ -403,10 +348,6 @@ export interface MemberTotals {
   total: number;
 }
 
-/** Leader 管理加成比例与每月封顶(7.3),集中于此便于调整 */
-export const LEAD_BONUS_RATE = DEFAULT_KPI_CONFIG.leader.bonusRate;
-export const LEAD_BONUS_CAP = DEFAULT_KPI_CONFIG.leader.monthlyCap;
-
 /** 某端管理加成的承接人:本端 Lead → 架构师 →(架构端)CTO */
 export function squadManager(data: AppData, squad: Squad): Member | undefined {
   const lead = data.members.find((m) => m.active && m.squad === squad && m.role === 'lead');
@@ -430,7 +371,7 @@ function monthsBetween(from: string, to: string): string[] {
 }
 
 /**
- * Leader 管理加成(7.3):按月计算,每月每位承接人封顶 15,再按区间相加。
+ * Leader 管理加成(7.3):按月计算,每月每位承接人按配置封顶,再按区间相加。
  * 不含承接人本人的任务;只计正分任务(非 ops、实得 > 0)。
  */
 export function leadBonusInRange(data: AppData, from: string, to: string): Map<string, number> {
